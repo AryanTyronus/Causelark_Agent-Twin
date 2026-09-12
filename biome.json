@@ -1,0 +1,52 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.3.1/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["**", "!.next", "!.polsia", "!node_modules", "!dist"]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": { "useExhaustiveDependencies": "error" },
+      "suspicious": { "noConsole": "warn" },
+      "style": {
+        "useImportType": "error",
+        "noNonNullAssertion": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "@/lib/db": "Server-only DB access. Import it from an /api route handler, not a client page or component.",
+              "@prisma/client": "Server-only. Use the prisma singleton from @/lib/db inside an /api route handler.",
+              "server-only": "Server-only marker. Belongs in /api route handlers and src/lib server code, never a client page or component.",
+              "next/headers": "Server-only. Read request headers in proxy.ts or a route handler, not a client page or component.",
+              "@/lib/auth": "Server-only better-auth instance. Gate/read the session in an /api route handler; in a client component use @/lib/auth-client (useSession).",
+              "@/lib/require-admin": "Server-only admin guard. Call requireAdmin() at the top of an admin Server Component (or in a route handler); never import it into a 'use client' file."
+            }
+          }
+        }
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "src/app/**/route.ts",
+        "src/app/layout.tsx",
+        "src/lib/**",
+        "src/modules/**/server/**"
+      ],
+      "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
+    }
+  ],
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "css": { "parser": { "tailwindDirectives": true } },
+  "javascript": { "formatter": { "quoteStyle": "single", "semicolons": "always" } }
+}

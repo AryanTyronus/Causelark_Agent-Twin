@@ -1,0 +1,272 @@
+// @polsia:user-owned — one request-driven, transactional Agent Twin turn.
+
+import 'server-only';
+
+import type { Prisma } from '@prisma/client';
+import { AgentProviderError } from '@/lib/agent/provider';
+import { runResourceAgentTurn } from '@/lib/agent/resource-agent';
+import { getSimulationOptions, getSimulationStatus } from '@/lib/business/simulation';
+import { jsonValue, loadRun, toDetail } from '@/lib/business/simulation-persistence';
+import { SimulationState } from '@/lib/contracts/simulation';
+import { prisma } from '@/lib/db';
+
+export class TurnConflictError extends Error {
+  constructor() {
+    super('Another Agent Twin turn is already in progress or the run is terminal.');
+    this.name = 'TurnConflictError';
+  }
+}
+
+function errorKind(error: AgentProviderError): 'TIMEOUT' | 'ERROR' {
+  return error.code === 'timeout' ? 'TIMEOUT' : 'ERROR';
+}
+
+export async function runTurn(runId: string, ownerId: string) {
+  const claimed = await prisma.simulationRun.updateMany({
+    where: { id: runId, ownerId, status: 'RUNNING', turnInProgress: false },
+    data: { turnInProgress: true, agentStatus: 'THINKING' },
+  });
+  if (claimed.count !== 1) throw new TurnConflictError();
+
+  try {
+    const run = await loadRun(runId, ownerId);
+    if (!run) throw new TurnConflictError();
+    const state = SimulationState.parse(run.state);
+    const options = getSimulationOptions();
+    const objective = options.objectives.find((item) => item.key === run.objectiveKey)?.description;
+    if (!objective)
+      throw new AgentProviderError('provider_error', 'Simulation objective is unavailable.');
+    const agentRun = await runResourceAgentTurn({
+      objective,
+      state,
+      timeoutMs: options.configuration.toolTimeoutMs,
+    });
+    const outcomes = agentRun.toolbox.getOutcomes();
+    const finalState = agentRun.toolbox.getState();
+    const statusResult = getSimulationStatus(finalState);
+    const turnLimitReached = run.turnCount + 1 >= (run.maxTurns || options.configuration.maxTurns);
+    const nextStatus =
+      statusResult.status === 'RUNNING' && turnLimitReached ? 'LIMIT_REACHED' : statusResult.status;
+    const nextReason =
+      nextStatus === 'LIMIT_REACHED' && statusResult.status === 'RUNNING'
+        ? 'Agent turn limit reached.'
+        : statusResult.terminationReason;
+    const persisted = await prisma.$transaction(async (tx) => {
+      const sequenceStart = await tx.simulationEvent.count({ where: { runId } });
+      const eventRows: Prisma.SimulationEventCreateManyInput[] = [];
+      const event = (
+        kind: string,
+        source: string,
+        summary: string,
+        payload: Record<string, unknown>,
+        step: number,
+      ) => {
+        eventRows.push({
+          runId,
+          sequence: sequenceStart + eventRows.length,
+          step,
+          kind,
+          source,
+          summary,
+          payload: jsonValue(payload),
+        });
+      };
+      event(
+        'agent.turn.started',
+        'agent',
+        'Agent turn started.',
+        { provider: agentRun.provider.metadata.provider },
+        state.step,
+      );
+      event(
+        'observation.created',
+        'system',
+        'Observable state provided to the agent.',
+        { state: state },
+        state.step,
+      );
+      const actionRows: Prisma.SimulationActionCreateManyInput[] = [];
+      const toolRows: Prisma.SimulationToolCallCreateManyInput[] = [];
+      outcomes.forEach((outcome, index) => {
+        const latencyMs = null;
+        const toolStatus = outcome.status === 'SUCCEEDED' ? 'SUCCEEDED' : 'REJECTED';
+        toolRows.push({
+          id: `${runId}-turn-${run.turnCount + 1}-${index}`,
+          runId,
+          step: outcome.stateBefore.step,
+          toolName: outcome.toolName,
+          input: jsonValue(outcome.input),
+          output: outcome.output ? jsonValue(outcome.output) : undefined,
+          status: toolStatus,
+          validationReason: outcome.validationReason,
+          latencyMs,
+        });
+        event(
+          'tool.requested',
+          'tool',
+          `${outcome.toolName} requested.`,
+          { toolName: outcome.toolName, input: outcome.input },
+          outcome.stateBefore.step,
+        );
+        event(
+          'tool.result',
+          'tool',
+          `${outcome.toolName} ${toolStatus.toLowerCase()}.`,
+          { status: toolStatus, validationReason: outcome.validationReason },
+          outcome.stateAfter.step,
+        );
+        if (outcome.toolName === 'request_action') {
+          const actionInput = outcome.input as { type: string; resource?: string; amount: number };
+          actionRows.push({
+            id: `${runId}-agent-action-${run.turnCount + 1}-${index}`,
+            runId,
+            step: outcome.stateBefore.step,
+            actionType: actionInput.type,
+            input: jsonValue(outcome.input),
+            accepted: outcome.status === 'SUCCEEDED',
+            source: 'agent',
+            rejectionReason: outcome.validationReason,
+            observation: jsonValue(outcome.output ?? {}),
+            stateDiff: jsonValue({ before: outcome.stateBefore, after: outcome.stateAfter }),
+            validationCode: outcome.status === 'SUCCEEDED' ? 'ACCEPTED' : 'REJECTED',
+            resultingState: jsonValue(outcome.stateAfter),
+          });
+          event(
+            'action.requested',
+            'agent',
+            `Agent requested ${actionInput.type}.`,
+            { input: outcome.input },
+            outcome.stateBefore.step,
+          );
+          event(
+            outcome.status === 'SUCCEEDED' ? 'action.validated' : 'action.rejected',
+            'system',
+            outcome.status === 'SUCCEEDED'
+              ? 'Action validated and applied.'
+              : (outcome.validationReason ?? 'Action rejected.'),
+            { input: outcome.input },
+            outcome.stateAfter.step,
+          );
+          if (outcome.status === 'SUCCEEDED')
+            event(
+              'state.changed',
+              'system',
+              'Environment state changed.',
+              { before: outcome.stateBefore, after: outcome.stateAfter },
+              outcome.stateAfter.step,
+            );
+        }
+      });
+      if (actionRows.length) await tx.simulationAction.createMany({ data: actionRows });
+      if (toolRows.length) await tx.simulationToolCall.createMany({ data: toolRows });
+      event(
+        'agent.turn.completed',
+        'agent',
+        'Agent turn completed with safe metadata.',
+        {
+          provider: agentRun.provider.metadata.provider,
+          latencyMs: agentRun.provider.metadata.latencyMs,
+          inputTokens: agentRun.provider.metadata.inputTokens,
+          outputTokens: agentRun.provider.metadata.outputTokens,
+          toolCalls: outcomes.length,
+        },
+        finalState.step,
+      );
+      if (nextStatus !== 'RUNNING')
+        event(
+          nextStatus === 'COMPLETED' ? 'simulation.completed' : 'simulation.failed',
+          'system',
+          nextReason ?? 'Simulation terminated.',
+          { status: nextStatus },
+          finalState.step,
+        );
+      if (eventRows.length) await tx.simulationEvent.createMany({ data: eventRows });
+      await tx.simulationRun.update({
+        where: { id: runId },
+        data: {
+          state: jsonValue(finalState),
+          step: finalState.step,
+          status: nextStatus,
+          agentStatus:
+            nextStatus === 'COMPLETED'
+              ? 'COMPLETED'
+              : nextStatus === 'RUNNING'
+                ? 'WAITING'
+                : 'FAILED',
+          budgetUsed: finalState.budgetSpent,
+          turnCount: { increment: 1 },
+          turnInProgress: false,
+          terminationReason: nextReason,
+          terminalAt: nextStatus === 'RUNNING' ? null : new Date(),
+        },
+      });
+      const updated = await tx.simulationRun.findFirst({
+        where: { id: runId, ownerId },
+        include: {
+          actions: { orderBy: [{ step: 'asc' }, { createdAt: 'asc' }] },
+          events: { orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }] },
+          toolCalls: { orderBy: [{ createdAt: 'asc' }] },
+        },
+      });
+      if (!updated) throw new Error('Simulation run disappeared during agent turn.');
+      return { run: toDetail(updated), outcomes, provider: agentRun.provider, status: nextStatus };
+    });
+    return {
+      run: persisted.run,
+      turn: {
+        status: 'COMPLETED' as const,
+        provider: agentRun.provider.metadata.provider,
+        toolCalls: persisted.outcomes.length,
+        acceptedActions: persisted.outcomes.filter(
+          (outcome) => outcome.toolName === 'request_action' && outcome.status === 'SUCCEEDED',
+        ).length,
+        safeError: null,
+      },
+    };
+  } catch (error) {
+    const isProviderError = error instanceof AgentProviderError;
+    const message = error instanceof Error ? error.message.slice(0, 240) : 'Agent turn failed.';
+    const status = isProviderError && errorKind(error) === 'TIMEOUT' ? 'TIMEOUT' : 'ERROR';
+    await prisma.$transaction(async (tx) => {
+      const sequence = await tx.simulationEvent.count({ where: { runId } });
+      await tx.simulationEvent.create({
+        data: {
+          runId,
+          sequence,
+          step: 0,
+          kind: 'agent.error',
+          source: 'agent',
+          summary: message,
+          payload: jsonValue({
+            code: isProviderError ? error.code : 'environment_error',
+            recoverable: false,
+          }),
+        },
+      });
+      await tx.simulationRun.updateMany({
+        where: { id: runId, ownerId },
+        data: {
+          status,
+          agentStatus: 'FAILED',
+          failureDetails: message,
+          terminationReason: message,
+          terminalAt: new Date(),
+          turnInProgress: false,
+          turnCount: { increment: 1 },
+        },
+      });
+    });
+    const failedRun = await loadRun(runId, ownerId);
+    if (!failedRun) throw error;
+    return {
+      run: toDetail(failedRun),
+      turn: {
+        status: 'FAILED' as const,
+        provider: 'Polsia AI proxy · Strands Agents SDK',
+        toolCalls: 0,
+        acceptedActions: 0,
+        safeError: message,
+      },
+    };
+  }
+}

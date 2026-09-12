@@ -1,0 +1,46 @@
+# Polsia Next.js template — gitignore (Node + Next.js + tools)
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js
+.next/
+/out/
+next-env.d.ts
+
+# Production builds
+/build/
+/dist/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Env files: never commit .env*
+# Block every .env* variant (.env, .env.local, .env.production, .env.staging, …)
+# and keep only the committed .env.example documenting the shape.
+.env*
+!.env.example
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Testing
+/coverage/
+
+# TypeScript
+*.tsbuildinfo
+
+# Vercel
+.vercel
+
+# Polsia upgrade reconcile sidecars (never commit)
+*.polsia-app-old

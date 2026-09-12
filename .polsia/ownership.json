@@ -1,0 +1,490 @@
+{
+  "$schema": "https://polsia.app/schema/ownership.v1.json",
+  "_doc": "Generated path -> tier map (per D21). This file follows ownership.v1.json: a flat, ordered paths array. Later entries override earlier globs. Shared files with framework-owned scaffolding are represented once as shared with a composed strategy; they are not also listed as whole-file framework_owned.",
+  "paths": [
+    {
+      "path": "tsconfig.json",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "biome.json",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "vitest.config.ts",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "components.json",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "prisma.config.ts",
+      "tier": "framework_owned"
+    },
+    {
+      "path": ".npmrc",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "polsia.toml",
+      "tier": "user_owned",
+      "_note": "Polsia deploy manifest read server-side at the deploy commit (build/start/healthcheck/port/env). Agent-editable for ONE purpose: appending [[crons]] scheduled-job blocks (push_to_remote re-syncs them each deploy). Deploy parsing is fail-open per field; build/start/health/port mirror the platform's verified TEMPLATE_NEXT_MANIFEST and must not be changed."
+    },
+    {
+      "path": "postcss.config.mjs",
+      "tier": "framework_owned",
+      "_note": "Tailwind 4 PostCSS wiring — part of the token pipeline; framework-governed like the other build configs."
+    },
+    {
+      "path": "AGENTS.md",
+      "tier": "framework_owned",
+      "_note": "The engineering agent's operating manual / contract. Framework-governed so a run can't rewrite its own rules; the framework updates it, not the per-app agent. (README.md stays user_owned — it is the human-facing doc.)"
+    },
+    {
+      "path": ".polsia/installed.json",
+      "tier": "framework_owned"
+    },
+    {
+      "path": ".polsia/ownership.json",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "src/app/(setup)/page.tsx",
+      "tier": "user_owned",
+      "_note": "Starter home served at / on a fresh clone. The agent OWNS it: edit it in place to build the home, or delete the (setup)/ tree when a route-owning module or a root src/app/page.tsx takes over / (two pages at / is a build error). Not framework_owned — the agent must be able to replace the home it serves."
+    },
+    {
+      "path": "src/lib/db.ts",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "src/instrumentation.ts",
+      "tier": "framework_owned",
+      "_note": "Next.js server-startup hook. Framework-owned so the correctness envelope of the startup seed can't be broken: the Node-runtime guard (register() also fires on edge, where Prisma can't run) and fail-open (a throwing seed is logged, never re-thrown, so a bad seed never blocks the boot). It calls seed() from the user-owned src/lib/seed.ts — the agent writes the seed there, never here."
+    },
+    {
+      "path": "src/lib/seed.ts",
+      "tier": "user_owned",
+      "_note": "Deploy-time database seed the agent OWNS. seed() runs once at server boot (via src/instrumentation.ts), on the Node server, AFTER the schema is applied, for reference/lookup data that must exist before the first request (plans, categories, feature defaults). Runs on EVERY boot so writes must be idempotent (upsert / skipDuplicates). Ships as a no-op; edit in place — don't delete it (instrumentation.ts imports it). NOT for recurring work (that's polsia.toml [[crons]]) or request-time logic (that's an /api route handler)."
+    },
+    {
+      "path": "src/app/api/example/**",
+      "tier": "user_owned",
+      "_note": "Concrete data-plane EXAMPLE the agent owns — copy its shape for real resources, edit it, or delete it when building the real feature. Agent-authored /api routes are app-owned the same way (unmatched ⇒ user_owned); module-installed routes are protected by the module's own manifest globs + the install integrity registry."
+    },
+    {
+      "path": "src/app/(auth)/**",
+      "tier": "user_owned",
+      "_note": "Auth route group: user_owned, like (dashboard) — build + restyle auth-area pages (login/signup/profile/etc.) freely. Don't hand-roll the auth security surface: install the auth module, which ships src/lib/auth.ts, src/app/api/auth/**, the prisma auth schema and require-auth/require-admin as its own framework_owned files."
+    },
+    {
+      "path": "src/app/(dashboard)/**",
+      "tier": "user_owned",
+      "_note": "Dashboard route group: user_owned — build + iterate member-area pages (settings/admin/teams) freely. Like (auth), it has no framework-owned surface of its own; the dashboard-shell module seeds its pages as user_owned too."
+    },
+    {
+      "path": "src/lib/api-client.ts",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "src/lib/csp.ts",
+      "tier": "framework_owned",
+      "_note": "Builds the CSP string used by proxy.ts. script-src strict; style-src allows 'unsafe-inline' for headless UI. Resource directives (frame/connect/media/font/img) accept per-app extras from cspExtraSources in next.user-config.ts (wildcards/exec-escapes dropped). Posture locked by tests/unit/csp.test.ts."
+    },
+    {
+      "path": "src/lib/permissions-policy.ts",
+      "tier": "framework_owned",
+      "_note": "Builds the Permissions-Policy header from appCapabilities in next.user-config.ts. Every feature defaults to () (disabled); apps opt in per-feature to (self). browsing-topics stays hard-off. Posture locked by tests/unit/permissions-policy.test.ts."
+    },
+    {
+      "path": "src/lib/forms.ts",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "src/lib/contracts/example.ts",
+      "tier": "user_owned",
+      "_note": "Concrete data-plane EXAMPLE the agent owns — copy its shape for real resources, edit it, or delete it when building the real feature. Shared-zod contract imported by BOTH the route handler and the client page; per-resource copies the agent makes are agent-owned the same way."
+    },
+    {
+      "path": "src/lib/utils.ts",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "src/lib/nav.ts",
+      "tier": "user_owned",
+      "_note": "Plain nav config the agent edits freely; SiteNav (and the SEO sitemap) read it. NOT a registry/contract — the discoverability rule is reachability-by-intent, enforced by the eng-v2 prompt + end-of-run review."
+    },
+    {
+      "path": "src/components/theme-provider.tsx",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "src/components/polsia-analytics.tsx",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "src/components/ui/**",
+      "tier": "user_owned",
+      "_note": "Baked shadcn primitive set (28 files) the agent OWNS — restyle/extend via theme tokens + cva variants. Covers actions (button), layout/typography (card, separator, table, tabs, accordion, breadcrumb), forms (input, label, textarea, select, checkbox, radio-group, switch, slider, form), overlays (dialog, sheet, popover, tooltip, dropdown-menu), and feedback (badge, alert, skeleton, avatar, pagination, progress, sonner toast host). `src/components/ui/` is the canonical list. All CSP-safe under the proxy.ts policy (style-src allows inline). Pull more with `npx shadcn add`; they land here agent-owned."
+    },
+    {
+      "path": "src/app/health/route.ts",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "src/modules/**",
+      "tier": "framework_owned",
+      "_note": "Vendored module installs — written by the module installer, never hand-edited."
+    },
+    {
+      "path": ".polsia/overrides.json",
+      "tier": "user_owned"
+    },
+    {
+      "path": "public/**",
+      "tier": "user_owned"
+    },
+    {
+      "path": "src/app/not-found.tsx",
+      "tier": "user_owned"
+    },
+    {
+      "path": "README.md",
+      "tier": "user_owned"
+    },
+    {
+      "path": ".env",
+      "tier": "user_owned"
+    },
+    {
+      "path": ".env.local",
+      "tier": "user_owned"
+    },
+    {
+      "path": "src/app/(custom)/**",
+      "tier": "user_owned"
+    },
+    {
+      "path": "src/lib/business/**",
+      "tier": "user_owned"
+    },
+    {
+      "path": "src/components/custom/**",
+      "tier": "user_owned"
+    },
+    {
+      "path": "src/components/custom/site-nav.tsx",
+      "tier": "user_owned",
+      "_note": "Global, data-driven nav (header + footer) rendered from src/lib/nav.ts and mounted in layout.tsx. The agent OWNS it — restyle via theme tokens + cva variants, and wire the session check (the requiresAuth seam) when an auth module ships @/lib/auth-client."
+    },
+    {
+      "path": "src/components/custom/global-mounts.tsx",
+      "tier": "user_owned",
+      "_note": "Agent-writable home for root/global mounts (Cmd+K palette, global listeners, app-wide overlays), rendered once by the framework-owned layout.tsx — add root mounts here, not in layout.tsx."
+    },
+    {
+      "path": "src/components/providers.tsx",
+      "tier": "user_owned",
+      "_note": "Agent-writable home for app-wide client Context providers (auth, cart, session), rendered by the framework-owned layout.tsx as an ancestor of nav/page/footer/mounts — add providers here, not scoped to a leaf like a modal."
+    },
+    {
+      "path": "src/app/globals.css",
+      "tier": "shared",
+      "strategy": "composed",
+      "slot": "brand_tokens"
+    },
+    {
+      "path": "src/app/custom-style.css",
+      "tier": "user_owned",
+      "_note": "User-owned global-CSS entrypoint, @import'd once by globals.css. The agent adds custom keyframes/animation classes/one-off global styles here (and may @import its own .css files) — globals.css stays framework-owned."
+    },
+    {
+      "path": "src/lib/env.ts",
+      "tier": "shared",
+      "strategy": "composed",
+      "slots": [
+        "env_vars_server",
+        "env_vars_client",
+        "env_runtime"
+      ]
+    },
+    {
+      "path": "proxy.ts",
+      "tier": "shared",
+      "strategy": "composed",
+      "slot": "middleware_chain"
+    },
+    {
+      "path": "next.config.ts",
+      "tier": "shared",
+      "strategy": "composed",
+      "slots": [
+        "package_level_options",
+        "images_remote_patterns"
+      ]
+    },
+    {
+      "path": "next.user-config.ts",
+      "tier": "user_owned",
+      "_note": "User-owned companion to next.config.ts, imported + merged by it. The agent adds remote image hosts (userRemotePatterns), package-level Next options (userNextConfig), config plugin wrappers (userConfigPlugins — next-intl/Sentry/MDX/analyzer), browser-capability opt-ins (appCapabilities — microphone/camera/geolocation, default off) and extra CSP sources (cspExtraSources — frame/connect/media/font/img, default empty) HERE; next.config.ts + proxy.ts stay framework-owned (security headers/CSP, re-asserted after plugin composition)."
+    },
+    {
+      "path": "src/app/layout.tsx",
+      "tier": "framework_owned"
+    },
+    {
+      "path": "package.json",
+      "tier": "shared",
+      "strategy": "three-way-merge"
+    },
+    {
+      "path": ".env.example",
+      "tier": "shared",
+      "strategy": "composed"
+    },
+    {
+      "path": "prisma/schema/_base.prisma",
+      "tier": "framework_owned",
+      "_note": "Datasource + generator only. Never redeclare these in a module file."
+    },
+    {
+      "path": "prisma/migrations/migration_lock.toml",
+      "tier": "framework_owned",
+      "_note": "Prisma's project-level migration lock (records the datasource provider, one per app). Shipped ONCE by the template — modules must NOT ship their own copy (it collides on install). Modules add only their prisma/migrations/<timestamp>_<name>/ dirs."
+    },
+    {
+      "path": "src/lib/site.ts",
+      "tier": "framework_owned",
+      "_note": "SEO plumbing entry point: the deploy origin (siteUrl, from NEXT_PUBLIC_APP_URL) for robots/sitemap/canonical, plus a re-export of the user-owned brand from src/lib/brand.ts. Framework-owned so per-app SEO stays standard + the origin can't be hand-broken; the agent sets the BRAND in brand.ts, per-page metadata in the page (POL-2616)."
+    },
+    {
+      "path": "src/lib/brand.ts",
+      "tier": "user_owned",
+      "_note": "Product brand identity (siteName/siteDescription) the agent sets per app — drives the nav-bar brand, the <title> template, OG/Twitter, and the PWA manifest. site.ts re-exports it; siteUrl (deploy origin) stays framework-owned (POL-2626)."
+    },
+    {
+      "path": "src/app/robots.ts",
+      "tier": "framework_owned",
+      "_note": "Standard Next metadata route. Indexing is opt-in via SEO_INDEXABLE=true (production); previews/staging return Disallow: /. Per-path crawl rules come from the user-owned companion src/lib/robots-config.ts — don't hand-roll robots."
+    },
+    {
+      "path": "src/lib/robots-config.ts",
+      "tier": "user_owned",
+      "_note": "User-owned companion to src/app/robots.ts: robotsConfig sets per-path disallow + optional crawl-delay, merged into /robots.txt when the deploy is indexable (SEO_INDEXABLE=true). The sanctioned way to customize crawl rules; the agent edits this, never robots.ts."
+    },
+    {
+      "path": "src/app/sitemap.ts",
+      "tier": "framework_owned",
+      "_note": "Standard Next metadata route generated from src/lib/nav.ts public routes (skips requiresAuth) AND merged with src/lib/seo-routes.ts for programmatic [slug] pages. A nav page is in the sitemap the moment it has a NavItem; programmatic pages come from seoRoutes() — don't hand-edit this file."
+    },
+    {
+      "path": "src/lib/seo-routes.ts",
+      "tier": "user_owned",
+      "_note": "User-owned companion to the framework sitemap (src/app/sitemap.ts): seoRoutes() returns extra entries for PROGRAMMATIC SEO pages — dynamic [slug] routes (e.g. /champions/[slug]) that can't live in the nav menu. The SANCTIONED way to put programmatic pages in /sitemap.xml; the agent edits this, never sitemap.ts."
+    },
+    {
+      "path": "src/app/llms.txt/route.ts",
+      "tier": "framework_owned",
+      "_note": "llms.txt (the llmstxt.org proposal) for AI/LLM crawlers; opt-in via SEO_INDEXABLE like robots (previews/staging/local 404). Thin endpoint: it only serves renderLlmsTxt() from src/lib/llms.ts (shape + renderer), fed the user-owned llmsConfig value from src/lib/llms-config.ts — don't hand-roll llms.txt or move construction here."
+    },
+    {
+      "path": "src/lib/llms.ts",
+      "tier": "framework_owned",
+      "_note": "The /llms.txt domain: the config SHAPE (LlmsConfig type) + renderLlmsTxt(), which builds the document from that config and the same public-page sources/filters as the sitemap (nav.ts + seo-routes.ts). Framework-owned so /llms.txt stays standard and can be patched centrally; the per-app VALUE is the user-owned src/lib/llms-config.ts (imports LlmsConfig from here)."
+    },
+    {
+      "path": "src/lib/llms-config.ts",
+      "tier": "user_owned",
+      "_note": "User-owned companion to /llms.txt: declares the llmsConfig VALUE (intro, per-page descriptions, extra curated sections, Optional) merged into /llms.txt when the deploy is indexable (SEO_INDEXABLE=true). Its SHAPE + renderer are framework-owned in src/lib/llms.ts (imports LlmsConfig from there). The sanctioned way to curate /llms.txt content; the agent edits this, never the route or the renderer."
+    },
+    {
+      "path": "src/app/manifest.ts",
+      "tier": "framework_owned",
+      "_note": "Standard Next web manifest (PWA/theme/icon hints). Colors (theme_color/background_color) come from brandVisual in the user-owned src/lib/brand.ts — set them there to match your brand seed."
+    },
+    {
+      "path": "src/app/icon.svg",
+      "tier": "user_owned",
+      "_note": "Default favicon/app icon (Next file-based metadata, served at /icon.svg and referenced by manifest.ts). User-owned: replace it in place with a brand icon."
+    },
+    {
+      "path": "src/app/opengraph-image.tsx",
+      "tier": "framework_owned",
+      "_note": "Default OG/Twitter image (Next file-based metadata, next/og), generated from the brand in src/lib/brand.ts. Framework-owned so every app gets a real social-share preview; the brand it renders is set via brand.ts (user-owned)."
+    },
+    {
+      "path": "src/lib/locale.ts",
+      "tier": "user_owned",
+      "_note": "Per-app HTML locale the framework layout reads for <html lang>/dir — set lang/dir here, don't eject layout.tsx."
+    },
+    {
+      "path": "src/lib/viewport-config.ts",
+      "tier": "user_owned",
+      "_note": "Per-app viewport + browser-chrome theme-color spread into the framework layout's viewport export; defaults to brandVisual.themeColor from brand.ts."
+    },
+    {
+      "path": "src/components/custom/head-content.tsx",
+      "tier": "user_owned",
+      "_note": "Extra <head> content (verification meta, preconnect, third-party scripts via next/script) rendered by the framework layout — returns null by default."
+    },
+    {
+      "path": "src/app/error.tsx",
+      "tier": "user_owned",
+      "_note": "Standard App Router route error boundary — the agent owns it (restyle or delete)."
+    },
+    {
+      "path": "src/app/global-error.tsx",
+      "tier": "user_owned",
+      "_note": "Standard App Router root error boundary (renders its own <html>/<body>) — the agent owns it (restyle or delete)."
+    },
+    {
+      "path": "prisma/schema/auth.prisma",
+      "tier": "framework_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "prisma/migrations/**",
+      "tier": "framework_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/app/api/auth/**",
+      "tier": "framework_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/lib/auth.ts",
+      "tier": "framework_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/lib/auth-client.ts",
+      "tier": "framework_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/lib/require-admin.ts",
+      "tier": "framework_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/lib/require-auth.ts",
+      "tier": "framework_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/lib/auth-config.ts",
+      "tier": "user_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/app/api/example-secure/route.ts",
+      "tier": "user_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/components/custom/auth-nav.tsx",
+      "tier": "user_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/components/custom/sign-in-form.tsx",
+      "tier": "user_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/components/custom/sign-up-form.tsx",
+      "tier": "user_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/app/(auth)/login/page.tsx",
+      "tier": "user_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/app/(auth)/signup/page.tsx",
+      "tier": "user_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/app/(auth)/profile/page.tsx",
+      "tier": "user_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "prisma/migrations/20260603000000_init_better_auth/migration.sql",
+      "tier": "framework_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "prisma/migrations/20260612000000_add_better_auth_admin/migration.sql",
+      "tier": "framework_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/app/api/auth/[...all]/route.ts",
+      "tier": "framework_owned",
+      "owner_module": "better-auth"
+    },
+    {
+      "path": "src/app/(dashboard)/dashboard/layout.tsx",
+      "tier": "user_owned",
+      "owner_module": "dashboard-shell"
+    },
+    {
+      "path": "src/app/(dashboard)/dashboard/page.tsx",
+      "tier": "user_owned",
+      "owner_module": "dashboard-shell"
+    },
+    {
+      "path": "src/components/custom/dashboard/dashboard-shell.tsx",
+      "tier": "user_owned",
+      "owner_module": "dashboard-shell"
+    },
+    {
+      "path": "src/components/custom/dashboard/dashboard-nav.tsx",
+      "tier": "user_owned",
+      "owner_module": "dashboard-shell"
+    },
+    {
+      "path": "src/components/custom/dashboard/dashboard-card.tsx",
+      "tier": "user_owned",
+      "owner_module": "dashboard-shell"
+    },
+    {
+      "path": "src/lib/ai/schema.ts",
+      "tier": "framework_owned",
+      "owner_module": "ai"
+    },
+    {
+      "path": "src/lib/ai/client.ts",
+      "tier": "framework_owned",
+      "owner_module": "ai"
+    },
+    {
+      "path": "src/lib/ai/use-chat.ts",
+      "tier": "framework_owned",
+      "owner_module": "ai"
+    },
+    {
+      "path": "src/app/api/ai/chat/route.ts",
+      "tier": "framework_owned",
+      "owner_module": "ai"
+    },
+    {
+      "path": "src/components/custom/ai-chat.tsx",
+      "tier": "user_owned",
+      "owner_module": "ai"
+    }
+  ],
+  "tier_invariants": {
+    "auth_subtree_user_owned": "src/app/(auth)/** is user_owned (like (dashboard)): build + restyle auth-area pages freely. Don't hand-roll the auth security surface — install the auth module, which owns src/lib/auth.ts, src/app/api/auth/**, the prisma auth schema and require-auth/require-admin as framework_owned.",
+    "dashboard_subtree_user_owned": "src/app/(dashboard)/** is user_owned: build + iterate member-area pages (settings/admin/teams) freely. Like (auth), it has no framework-owned surface of its own; module-seeded pages are user_owned too.",
+    "user_owned_post_install": "Framework never writes user_owned paths after install. Modules may seed them once and must preserve them on upgrade.",
+    "setup_route_replaced_by_app_surface": "src/app/(setup)/page.tsx is the user-owned starter home served at / on a fresh clone. The agent replaces it — by editing it in place into the real home, or by deleting the (setup)/ tree once a root src/app/page.tsx or a route-owning module takes over / (two pages resolving to / is a build error). No module or installer auto-removes the tree: the agent deletes (setup)/ itself as part of wiring in whatever takes over /. It is NOT framework_owned: the agent must be able to replace the home it serves. Leaving / with no page is the one thing to avoid.",
+    "ui_baseline_in_template": "The template ships the shadcn baseline directly — components.json + cn() (framework_owned), a broad committed primitive set in src/components/ui/** (layout, forms, overlays, navigation, feedback — see the path note) that is AGENT-OWNED (restyle/extend via theme tokens + cva variants), a next-themes ThemeProvider (framework_owned), and a token-driven theme. There is NO ui-core module. Restyle look-and-feel through the brand_tokens slot in globals.css + cva variants — not ad-hoc per-element colors. Pull MORE primitives with `npx shadcn add` (components.json is present); they land agent-owned in src/components/ui/**. All primitives are CSP-safe: proxy.ts keeps script-src strict but allows inline styles (style-src 'unsafe-inline'), so Radix runtime positioning/animation works in production.",
+    "api_routes_are_framework_owned": "Module-shipped API route handlers are governed: module-installed handlers are protected by their own manifest globs plus the install integrity registry. The template's reference handler (src/app/api/example/**) is NOT framework_owned — it is a concrete data-plane example the agent owns (copy/edit/delete it when building the real feature), just like AGENT-authored route handlers, which are app-owned — the agent may create them and later modify them freely. All data access still flows through /api route handlers + @/lib/api-client per the data-plane rule, and Server Actions remain banned: the deploy build gate greps src/ for a 'use server' directive and rejects it (Biome sees imports, not directives)."
+  }
+}

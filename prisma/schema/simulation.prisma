@@ -1,0 +1,88 @@
+// @polsia:user-owned — deterministic simulation persistence. The auth User is
+// referenced by scalar ownerId only; do not add a relation to the locked model.
+
+model SimulationRun {
+  id                String             @id @default(cuid())
+  ownerId           String
+  environmentKey    String
+  objectiveKey      String
+  seed              Int
+  status            String
+  agentStatus       String             @default("READY")
+  step              Int                @default(0)
+  state             Json
+  initialState      Json?
+  configuration     Json?
+  tasks             Json?
+  constraints       Json?
+  budgetLimit       Int                @default(24)
+  budgetUsed        Int                @default(0)
+  maxTurns          Int                @default(12)
+  turnInProgress    Boolean            @default(false)
+  turnCount         Int                @default(0)
+  terminationReason String?
+  failureDetails    String?
+  terminalAt        DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  actions           SimulationAction[]
+  events            SimulationEvent[]
+  toolCalls         SimulationToolCall[]
+
+  @@index([ownerId, createdAt])
+  @@index([createdAt])
+}
+
+model SimulationAction {
+  id              String        @id @default(cuid())
+  runId           String
+  step            Int
+  actionType      String
+  input           Json
+  accepted        Boolean
+  source          String        @default("manual")
+  rejectionReason String?
+  observation     Json
+  stateDiff       Json?
+  validationCode  String?
+  resultingState  Json
+  createdAt       DateTime      @default(now())
+  run             SimulationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, createdAt])
+  @@index([runId, step])
+}
+
+model SimulationEvent {
+  id        String        @id @default(cuid())
+  runId     String
+  sequence  Int
+  step      Int
+  kind      String
+  source    String
+  summary   String
+  payload   Json
+  createdAt DateTime      @default(now())
+  run       SimulationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, sequence])
+  @@index([runId, createdAt])
+}
+
+model SimulationToolCall {
+  id               String        @id @default(cuid())
+  runId            String
+  step             Int
+  toolName         String
+  input            Json
+  output           Json?
+  status           String
+  validationReason String?
+  latencyMs        Int?
+  providerMetadata Json?
+  createdAt        DateTime      @default(now())
+  run              SimulationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, createdAt])
+  @@index([runId, step])
+}

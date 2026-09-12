@@ -1,0 +1,77 @@
+// @polsia:framework-owned - DO NOT EDIT. Code installed by polsia/modules/better-auth@0.3.0. Drift = commit rejected.
+//
+// better-auth (v1.6.x) core models for the Prisma adapter — verbatim shape
+// emitted by `npx @better-auth/cli generate`, plus admin plugin fields on
+// User/Session. Self-contained: relations exist ONLY among these four models;
+// NO @relation to any other module's models.
+// Datasource + generator live in prisma/schema/_base.prisma (framework-owned by
+// the template). Do NOT redeclare them here.
+//
+// emailAndPassword is enabled in src/lib/auth.ts — the password lives on Account.
+// The admin plugin is enabled in src/lib/auth.ts and adds role/ban metadata.
+// @@map keeps the physical table names lowercase, exactly what better-auth's adapter queries.
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean
+  image         String?
+  role          String?   @default("user")
+  banned        Boolean?  @default(false)
+  banReason     String?
+  banExpires    DateTime?
+  createdAt     DateTime
+  updatedAt     DateTime
+  sessions      Session[]
+  accounts      Account[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  impersonatedBy String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("verification")
+}

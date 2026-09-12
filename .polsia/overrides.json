@@ -1,0 +1,10 @@
+{
+  "$schema": "https://polsia.app/schema/overrides.v1.json",
+  "_doc": "Per-module upgrade/config overrides (per D21). Hand-editable; framework reads but never writes. Per D14: patch auto, minor auto with per-module opt-out, major surfaces as an approve/defer card. Shape per overrides.v1.json — auto_upgrade values are enum strings (auto|manual, and approve|defer|manual for major); per-module entries live under module_overrides.",
+  "auto_upgrade": {
+    "patch": "auto",
+    "minor": "auto",
+    "major": "approve"
+  },
+  "module_overrides": {}
+}

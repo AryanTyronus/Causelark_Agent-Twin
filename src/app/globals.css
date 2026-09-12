@@ -1,0 +1,237 @@
+/* @polsia:shared scaffold — the agent's ONLY authority here is the SEED inside
+ * the `brand_tokens` slot. Everything else (the @theme namespaces, the
+ * framework-DERIVED color block, @layer base/components, @custom-variant dark)
+ * is FRAMEWORK STRUCTURE — do not edit it.
+ *
+ * Tailwind 4 is CSS-first (no tailwind.config.js). Seed -> derived model: the
+ * agent sets a handful of values in the slot (brand hue/chroma/lightness,
+ * radius, fonts); the framework DERIVES the full --brand-50..900 ramp + every
+ * semantic role (background/foreground/card/primary/border/...) + dark mode
+ * from that seed via oklch(). So editing ONE value (--brand-h) recolors the
+ * WHOLE site coherently. Out-of-range seed values are rejected at commit time.
+ * Dark mode is class-based: next-themes toggles `.dark` on <html>.
+ *
+ * Derivation runs at runtime via oklch(calc()) (evergreen browsers). If wider
+ * support is needed, pre-compute the derived block to literal oklch at install.
+ */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+/* @polsia:user-owned entrypoint — agents add custom global CSS in custom-style.css, not here. */
+@import "./custom-style.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* Semantic roles -> CSS vars (resolved at runtime from the derived block). */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Full brand ramp (was holey — only 50/100/500/700/900 existed, so
+     bg-brand-600 / border-brand-200 compiled to nothing). */
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+
+  /* Radius ramp from the single --radius seed. */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  /* Type scale — one class carries size + leading + weight + tracking, so the
+     agent reaches for `text-h1` instead of guessing text-4xl/font-bold/tracking. */
+  --text-display: 3.815rem;
+  --text-display--line-height: 1.04;
+  --text-display--font-weight: 720;
+  --text-display--letter-spacing: -0.022em;
+  --text-h1: 3.052rem;
+  --text-h1--line-height: 1.08;
+  --text-h1--font-weight: 700;
+  --text-h1--letter-spacing: -0.02em;
+  --text-h2: 2.441rem;
+  --text-h2--line-height: 1.14;
+  --text-h2--font-weight: 680;
+  --text-h2--letter-spacing: -0.016em;
+  --text-h3: 1.953rem;
+  --text-h3--line-height: 1.2;
+  --text-h3--font-weight: 640;
+  --text-h4: 1.563rem;
+  --text-h4--line-height: 1.28;
+  --text-h4--font-weight: 600;
+  --text-body-lg: 1.25rem;
+  --text-body-lg--line-height: 1.6;
+  --text-body: 1rem;
+  --text-body--line-height: 1.65;
+  --text-small: 0.875rem;
+  --text-small--line-height: 1.5;
+  --text-caption: 0.78rem;
+  --text-caption--line-height: 1.4;
+  --text-caption--letter-spacing: 0.01em;
+
+  /* Section rhythm — `py-section`, `px-gutter`, `max-w-[var(--container-page)]`. */
+  --spacing-stack: 0.75rem;
+  --spacing-block: 1.5rem;
+  --spacing-gutter: clamp(1rem, 5vw, 2rem);
+  --spacing-section: clamp(3.5rem, 7vw, 6rem);
+  --spacing-section-lg: clamp(5rem, 11vw, 9rem);
+  --container-page: 72rem;
+
+  /* Elevation — brand-tinted; depth becomes the default, not an afterthought. */
+  --shadow-xs: 0 1px 2px -1px var(--elevation-1);
+  --shadow-sm: 0 1px 3px 0 var(--elevation-1), 0 1px 2px -1px var(--elevation-1);
+  --shadow-md: 0 4px 12px -2px var(--elevation-2), 0 2px 6px -2px var(--elevation-1);
+  --shadow-lg: 0 12px 28px -6px var(--elevation-2), 0 4px 10px -4px var(--elevation-1);
+  --shadow-xl: 0 24px 48px -12px var(--elevation-3);
+  --shadow-2xl: 0 40px 80px -20px var(--elevation-3);
+  --shadow-brand: 0 8px 30px -6px var(--shadow-brand-color);
+
+  /* Motion. */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* === BEGIN polsia-slot:brand_tokens === */
+/* THE SEED — the agent's only styling authority on this file.
+   Set the brand HUE (and optionally chroma/lightness), the radius, and the
+   fonts. The framework derives the full --brand ramp + every surface/text/
+   border role + dark mode from these (see the derived block below), so editing
+   --brand-h ALONE recolors the entire site. Keep values in range. */
+:root {
+  --brand-h: 42; /* brand hue, 0–360 */
+  --brand-c: 0.17; /* brand chroma (saturation), 0–0.3 */
+  --brand-l: 0.58; /* lightness of the brand-500 step, 0.40–0.70 */
+  --radius: 0.2rem; /* corner roundness — cascades to every primitive */
+
+  --font-display: "Space Mono", ui-monospace, monospace;
+  --font-body: "IBM Plex Sans", ui-sans-serif, sans-serif;
+}
+/* === END polsia-slot:brand_tokens === */
+
+/* FRAMEWORK-DERIVED — NOT agent-editable (outside the slot). The full ramp,
+   every semantic role, and dark mode are computed from the seed above. Neutrals
+   carry a touch of the brand hue so one hue change reskins the whole surface. */
+:root {
+  --brand-50: oklch(0.97 calc(var(--brand-c) * 0.25) var(--brand-h));
+  --brand-100: oklch(0.93 calc(var(--brand-c) * 0.4) var(--brand-h));
+  --brand-200: oklch(0.87 calc(var(--brand-c) * 0.6) var(--brand-h));
+  --brand-300: oklch(0.78 calc(var(--brand-c) * 0.8) var(--brand-h));
+  --brand-400: oklch(0.67 var(--brand-c) var(--brand-h));
+  --brand-500: oklch(var(--brand-l) var(--brand-c) var(--brand-h));
+  --brand-600: oklch(calc(var(--brand-l) - 0.08) var(--brand-c) var(--brand-h));
+  --brand-700: oklch(calc(var(--brand-l) - 0.16) calc(var(--brand-c) * 0.9) var(--brand-h));
+  --brand-800: oklch(calc(var(--brand-l) - 0.24) calc(var(--brand-c) * 0.75) var(--brand-h));
+  --brand-900: oklch(calc(var(--brand-l) - 0.32) calc(var(--brand-c) * 0.55) var(--brand-h));
+
+  --background: oklch(0.99 0.004 var(--brand-h));
+  --foreground: oklch(0.18 0.01 var(--brand-h));
+  --card: oklch(1 0.002 var(--brand-h));
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --primary: var(--brand-600);
+  --primary-foreground: oklch(0.99 0.01 var(--brand-h));
+  --secondary: oklch(0.96 0.006 var(--brand-h));
+  --secondary-foreground: oklch(0.25 0.02 var(--brand-h));
+  --muted: oklch(0.96 0.006 var(--brand-h));
+  --muted-foreground: oklch(0.5 0.02 var(--brand-h));
+  --accent: oklch(0.96 0.006 var(--brand-h));
+  --accent-foreground: oklch(0.25 0.02 var(--brand-h));
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.9 0.008 var(--brand-h));
+  --input: oklch(0.9 0.008 var(--brand-h));
+  --ring: var(--brand-500);
+
+  --elevation-1: oklch(0.2 0.03 var(--brand-h) / 0.06);
+  --elevation-2: oklch(0.2 0.04 var(--brand-h) / 0.1);
+  --elevation-3: oklch(0.2 0.05 var(--brand-h) / 0.14);
+  --shadow-brand-color: oklch(var(--brand-l) var(--brand-c) var(--brand-h) / 0.35);
+}
+
+.dark {
+  --background: oklch(0.16 0.012 var(--brand-h));
+  --foreground: oklch(0.96 0.006 var(--brand-h));
+  --card: oklch(0.2 0.014 var(--brand-h));
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --primary: var(--brand-400);
+  --primary-foreground: oklch(0.18 0.02 var(--brand-h));
+  --secondary: oklch(0.26 0.014 var(--brand-h));
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.26 0.014 var(--brand-h));
+  --muted-foreground: oklch(0.7 0.02 var(--brand-h));
+  --accent: oklch(0.26 0.014 var(--brand-h));
+  --accent-foreground: var(--foreground);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: var(--brand-500);
+
+  --elevation-1: oklch(0 0 0 / 0.4);
+  --elevation-2: oklch(0 0 0 / 0.5);
+  --elevation-3: oklch(0 0 0 / 0.6);
+  --shadow-brand-color: oklch(var(--brand-l) var(--brand-c) var(--brand-h) / 0.45);
+}
+
+@layer components {
+  .section {
+    @apply py-section px-gutter;
+  }
+  .section-lg {
+    @apply py-section-lg px-gutter;
+  }
+  .container-page {
+    @apply mx-auto w-full max-w-[var(--container-page)] px-gutter;
+  }
+  .lift {
+    @apply transition-[transform,box-shadow] duration-200 ease-out-expo hover:-translate-y-0.5 hover:shadow-lg;
+  }
+  .text-eyebrow {
+    @apply text-caption font-semibold uppercase tracking-[0.08em] text-brand-600;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  /* Buttons get the UA stylesheet's arrow cursor; restore the pointer so every
+     interactive control matches the affordance an <a> gets for free. Lives in
+     `base` so `cursor-default`/`cursor-not-allowed` utilities still win — that
+     keeps shadcn's select and dropdown-menu items on the default arrow. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}

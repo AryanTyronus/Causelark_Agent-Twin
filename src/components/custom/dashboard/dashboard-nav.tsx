@@ -1,22 +1,24 @@
-// @polsia:user-owned
+// @polsia:user-owned — Agent Twin's console navigation.
+//
+// Four destinations, in the order the work is actually done: run a test, read
+// the standardised tests, see which agents this deployment can run, read the
+// reference. The recorded runs are not a fifth destination — they are reached
+// from a result or from the overview, because a run is evidence for a test
+// rather than a place you go on your own.
+
 'use client';
 
-import { FlaskConical, LayoutDashboard } from 'lucide-react';
+import { BookOpen, Cpu, FlaskConical, LayoutDashboard, Ruler } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  {
-    href: '/dashboard',
-    label: 'Overview',
-    icon: LayoutDashboard,
-  },
-  {
-    href: '/dashboard/simulations',
-    label: 'Simulation lab',
-    icon: FlaskConical,
-  },
+  { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { href: '/dashboard/tests', label: 'Tests', icon: FlaskConical },
+  { href: '/dashboard/benchmarks', label: 'Benchmarks', icon: Ruler },
+  { href: '/dashboard/agents', label: 'Agents', icon: Cpu },
+  { href: '/dashboard/docs', label: 'Documentation', icon: BookOpen },
 ];
 
 export function DashboardNav() {
@@ -24,12 +26,15 @@ export function DashboardNav() {
 
   return (
     <nav
-      aria-label="Dashboard"
+      aria-label="Agent Twin"
       className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:overflow-visible lg:pb-0"
     >
       {navItems.map((item) => {
         const Icon = item.icon;
-        const active = pathname === item.href;
+        const active =
+          item.href === '/dashboard'
+            ? pathname === '/dashboard'
+            : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
         return (
           <Link
@@ -37,9 +42,9 @@ export function DashboardNav() {
             href={item.href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors',
+              'flex h-10 shrink-0 items-center gap-2 rounded-sm px-3 text-small transition-colors',
               active
-                ? 'bg-secondary text-secondary-foreground'
+                ? 'bg-secondary font-medium text-secondary-foreground'
                 : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground',
             )}
           >

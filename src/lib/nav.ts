@@ -30,18 +30,24 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { label: 'Method', href: '/#method', group: 'primary', order: 10 },
   { label: 'Evidence', href: '/#evidence', group: 'primary', order: 20 },
-  { label: 'Replay', href: '/#replay', group: 'primary', order: 30 },
+  {
+    label: 'Tests',
+    href: '/dashboard/tests',
+    group: 'primary',
+    requiresAuth: true,
+    order: 30,
+  },
+  {
+    label: 'Benchmarks',
+    href: '/dashboard/benchmarks',
+    group: 'primary',
+    requiresAuth: true,
+    order: 40,
+  },
   {
     label: 'Request access',
     href: '/#contact',
     group: 'secondary',
     order: 10,
-  },
-  {
-    label: 'Simulation lab',
-    href: '/dashboard/simulations',
-    group: 'primary',
-    requiresAuth: true,
-    order: 40,
   },
 ];

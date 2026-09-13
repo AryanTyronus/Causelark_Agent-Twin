@@ -15,6 +15,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -75,27 +76,27 @@ export default function CauselarkHome() {
           <div className="relative z-10 max-w-2xl animate-in fade-in slide-in-from-bottom-3 duration-700">
             <div className="mb-8 flex items-center gap-3 text-caption font-semibold uppercase tracking-[0.16em] text-brand-700 dark:text-brand-300">
               <span className="h-px w-10 bg-primary" />
-              Agent evaluation / deterministic simulation
+              Agent Twin / autonomous agent testing laboratory
             </div>
             <h1 id="hero-heading" className="max-w-xl font-display text-display text-foreground">
-              Run autonomous agents safely in deterministic worlds.
+              Test autonomous intelligence before it touches the real world.
             </h1>
             <p className="mt-8 max-w-xl text-body-lg text-muted-foreground">
-              Causelark turns agent testing into an engineering workflow you can inspect, replay,
-              and trust — from the first observation to the final outcome.
+              Causelark Agent Twin puts autonomous agents inside controlled digital environments,
+              stress-tests them under adversarial conditions, and measures how they actually behave.
             </p>
             <div className="mt-10 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
               <Button asChild size="lg" className="group rounded-sm px-6">
-                <a href="mailto:causelark-6@polsia.app?subject=Causelark%20access">
-                  Request access
+                <Link href="/dashboard/tests">
+                  Run a test
                   <ArrowUpRight className="transition-transform duration-200 ease-out group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                </a>
+                </Link>
               </Button>
               <Button asChild variant="ghost" size="lg" className="group rounded-sm">
-                <a href="#method">
-                  See the method
+                <Link href="/dashboard/benchmarks">
+                  Explore benchmarks
                   <ArrowDownRight className="transition-transform duration-200 ease-out group-hover:translate-y-0.5" />
-                </a>
+                </Link>
               </Button>
             </div>
             <div className="mt-14 flex flex-wrap gap-x-6 gap-y-3 text-caption text-muted-foreground">
@@ -200,6 +201,9 @@ export default function CauselarkHome() {
             <p className="mt-4 text-right font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
               Observe → decide → act → resolve
             </p>
+            <p className="mt-1 text-right text-[10px] text-muted-foreground">
+              Interface illustration — not a recorded result.
+            </p>
           </div>
         </div>
       </section>
@@ -254,6 +258,17 @@ export default function CauselarkHome() {
             <div className="mt-8 flex items-center gap-3 text-small text-foreground">
               <Clock3 className="size-4 text-brand-700 dark:text-brand-300" />
               <span>Each transition is time-stamped and attributable.</span>
+            </div>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Button asChild className="rounded-sm">
+                <Link href="/dashboard/tests">
+                  Run a test
+                  <ArrowUpRight />
+                </Link>
+              </Button>
+              <Button asChild variant="outline" className="rounded-sm">
+                <Link href="/dashboard/benchmarks">Explore benchmarks</Link>
+              </Button>
             </div>
           </div>
           <Card className="overflow-hidden rounded-sm border-border bg-card shadow-lg">
@@ -355,19 +370,19 @@ export default function CauselarkHome() {
                   Make your next agent run explainable.
                 </h2>
                 <p className="mt-5 max-w-xl text-body-lg text-primary-foreground/80">
-                  Tell us what your agents need to learn, and we’ll show you the world to test it
-                  in.
+                  Put an agent inside the simulator, stress it under conditions it did not choose,
+                  and read the evidence before it meets a real one.
                 </p>
               </div>
               <div className="flex flex-col items-start gap-4 lg:items-end">
                 <Button asChild size="lg" variant="secondary" className="group rounded-sm px-6">
-                  <a href="mailto:causelark-6@polsia.app?subject=Causelark%20access">
-                    Request access
+                  <Link href="/dashboard/tests">
+                    Run a test
                     <ArrowUpRight className="transition-transform duration-200 ease-out group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                  </a>
+                  </Link>
                 </Button>
                 <a
-                  href="mailto:causelark-6@polsia.app"
+                  href="mailto:causelark-6@polsia.app?subject=Causelark%20access"
                   className="font-mono text-caption text-primary-foreground/75 transition-colors duration-200 hover:text-primary-foreground"
                 >
                   causelark-6@polsia.app

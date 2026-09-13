@@ -280,6 +280,44 @@ export type ScenarioDegradation = z.infer<typeof ScenarioDegradation>;
  */
 export const BENCHMARK_ROBUSTNESS_FORMULA = 'baseline-retention-v1';
 
+/**
+ * One benchmark in full: the standardised test itself, not its size.
+ *
+ * The catalogue carries counts, because a list only needs to say how large each
+ * benchmark is. A page about one benchmark needs to say what it *is* — which
+ * conditions at which pinned versions, which seeds, and the formula its
+ * robustness figure is a retention against — so this shape publishes the
+ * definition as data. It is a projection of the compiled registry and nothing
+ * more: no configuration is resolved against a credential, and no definition can
+ * arrive from a request.
+ */
+export const BenchmarkDetail = z.object({
+  id: z.string().min(1),
+  version: z.number().int().min(BENCHMARK_VERSION_MIN),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  environmentKey: SimulationEnvironmentKey,
+  objectiveKey: SimulationObjectiveKey,
+  /** The conditions, in matrix order, each pinned to an exact version. */
+  scenarios: z.array(BenchmarkScenario),
+  /** The seeds, in matrix order. */
+  seeds: z.array(z.number().int().min(0)),
+  /** Matrix cells: scenarios × seeds. */
+  caseCount: z.number().int().positive(),
+  /** The scenario robustness is measured as a change from. */
+  baselineScenarioId: z.literal(BENCHMARK_BASELINE_SCENARIO_ID),
+  /** The formula the benchmark engine computes robustness with. */
+  robustnessFormula: z.literal(BENCHMARK_ROBUSTNESS_FORMULA),
+  /** Configuration this benchmark declares over the environment's defaults. */
+  configuration: SimulationConfiguration.partial().nullable(),
+  /** The engine's own bound on how large one execution may be. */
+  limits: z.object({
+    maxCases: z.number().int().positive(),
+    maxSeeds: z.number().int().positive(),
+  }),
+});
+export type BenchmarkDetail = z.infer<typeof BenchmarkDetail>;
+
 export const RobustnessReport = z.object({
   formula: z.literal(BENCHMARK_ROBUSTNESS_FORMULA),
   baselineScenarioId: z.string().min(1).nullable(),

@@ -726,6 +726,74 @@ Two agents that miss *different* cases can tie on task success and still be
 separated on overall score; the report shows both facts rather than collapsing
 them into one number.
 
+## The console
+
+Everything above is a domain engine. The console is the surface over them, and it
+is deliberately thin: it renders what a server route returned and recomputes
+nothing. There is no second implementation of the overall score, the robustness
+retention, the failure taxonomy, the counterfactual regret or the verdict rule in
+`src/components/custom/agent-twin/**` or in `src/app/(dashboard)/dashboard/**`. If
+a number appears on a console page, it arrived in a response body.
+
+That is a rule with teeth, because it is the only thing keeping the console honest
+about the engines' own distinctions. An agent that produced no evidence has a
+`null` metric; a console that recomputed anything would be tempted to coerce it to
+`0`, and "scored zero" and "not measured" would become the same claim on screen.
+So a metric with no evidence renders as `unavailable`, a run with no recorded
+scenario renders as `not recorded`, and a comparison whose evidence could not
+discriminate renders the engine's own `INSUFFICIENT_EVIDENCE` rather than a
+weaker-sounding "no winner".
+
+**Three registers, kept apart.** A console page distinguishes what the evaluation
+engine measured, what the scenario engine applied, what the trace recorded, and
+what the counterfactual engine concluded — and names the engine where a reader
+could otherwise attribute one to another. The counterfactual page in particular
+shows only conclusions the counterfactual engine returned; no model explains a
+result to the reader, and none is asked to.
+
+**A comparison report is not persisted.** `POST
+/api/agent-comparisons/<id>/run` returns the report, and the console holds it in
+the browser for the session that ran it — `sessionStorage`, stated on the page as
+such. The runs the report was derived from *are* persisted, they are listed
+alongside it, and the report is reproducible from them, which is the same argument
+the comparison layer makes for not caching it: a stored copy could only drift from
+the evidence it claims to summarise. The consequence is stated on the page rather
+than hidden — a comparison result is shown only in the browser session that made
+it, and opening the page elsewhere reports what it has: the registration and the
+runs, and no verdict.
+
+**The run experience is not simulated.** A comparison executes a real matrix
+through the ordinary turn path, so the console has no progress to report until the
+server has something to report. It polls the persisted runs and shows the ones
+that exist; it does not draw a progress bar over a duration it guessed. There is no
+fabricated execution event anywhere in the console, because a run that reported
+progress it had not made would be the one thing this product cannot afford.
+
+**The benchmark detail endpoint.** `GET /api/benchmarks/<benchmarkId>` is the one
+route added for this surface. It projects the compiled registry through the same
+`findBenchmark` the execution path uses, so the benchmark a page describes is the
+benchmark that would run — a page cannot advertise a definition that execution
+would not resolve. The version is validated (`/^\d{1,6}$/`) and an unknown id is a
+`404` with `code: "UNKNOWN_BENCHMARK"`; the caller's own input is not echoed back
+into the message. It is a `GET` over a frozen, in-process registry: it reads no
+database, takes no input beyond the id and version, and returns no credential.
+
+| Console route | Engine surface it renders |
+| --- | --- |
+| `/dashboard` | Recorded runs, the benchmark catalogue, the experiment catalogue |
+| `/dashboard/tests`, `/dashboard/tests/<id>` | The experiment registration, the persisted runs, and the session's report |
+| `/dashboard/benchmarks`, `/dashboard/benchmarks/<id>` | The benchmark catalogue and one pinned definition |
+| `/dashboard/agents` | The agent configurations this build can construct a client for |
+| `/dashboard/simulations`, `/dashboard/simulations/<id>` | The run starter, the inspector, the trace and the replay |
+| `/dashboard/docs` | The methodology, as prose about the engines above |
+
+The console is a client over authenticated routes; it adds no route of its own
+beyond the benchmark detail projection, no table, no column and no migration. An
+`apiFetch` failure renders as an explicit unavailable state with the endpoint's
+status kept out of the page, and an unreadable catalogue is never rendered as an
+empty one — a deployment whose database is down must not look like a deployment
+with no tests.
+
 ## Persistence
 
 Simulation tables are app-owned. They are created by forward-only, purely

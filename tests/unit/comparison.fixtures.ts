@@ -100,9 +100,13 @@ export function benchmarkResultFor(
 /**
  * A comparison report for a set of agents, assembled by the real engine.
  *
- * `reports` maps an agent id to the scores it should have produced; an agent
- * absent from it is one that produced no report at all, which is how a failed or
- * unrunnable agent is modelled here.
+ * `reports` maps an agent to the scores it should have produced; an agent absent
+ * from it is one that produced no report at all, which is how a failed or
+ * unrunnable agent is modelled here. An agent may be named either by its agent id
+ * or by its `agentId@agentVersion` identity, and the identity is consulted when
+ * the id is absent — which is what lets a test compare two models of the *same*
+ * provider: those two configurations share an agent id, and only their identity
+ * tells them apart.
  */
 export function comparisonFixture(input: {
   agents: readonly AgentConfiguration[];
@@ -118,7 +122,7 @@ export function comparisonFixture(input: {
   const unavailable = new Map<string, { code: string; message: string }>();
   for (const agent of agents) {
     const key = agentConfigurationKey(agent);
-    const scores = input.reports.get(agent.agentId);
+    const scores = input.reports.get(agent.agentId) ?? input.reports.get(agentIdentity(agent));
     if (scores) results.set(key, benchmarkResultFor(agent, scores));
     else
       unavailable.set(key, {

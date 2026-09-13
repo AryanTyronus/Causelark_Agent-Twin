@@ -81,7 +81,7 @@ Three properties make the comparison meaningful:
 
 Every change is explicit and attributable. A run stores the scenario id and version it was created under, and the trace records a `scenario.applied` system event — never an agent action — carrying a change record per field touched: `{"field":"budgetRemaining","before":24,"after":14,"modifier":"budget-reduction"}`. A rerun pins the recorded version rather than re-resolving the id, so a later edit to a definition cannot silently change what reproducing a run means. Evaluation carries the scenario as context only: the verdict for the same evidence is identical with or without it.
 
-`GET /api/scenarios` lists the catalogue; run creation accepts an optional `scenarioId`. No LLM generates scenarios, there is no scenario UI, and Phase 2 adds no scenario-specific scoring.
+`GET /api/scenarios` lists the catalogue; run creation accepts an optional `scenarioId`. No LLM generates scenarios, there is no scenario editor — a condition is data that shipped with the code — and Phase 2 adds no scenario-specific scoring. The console displays a benchmark's conditions and a run's applied condition; it cannot author one.
 
 ## Agent Runtime
 
@@ -215,7 +215,33 @@ Counterfactual analysis (derived from a recorded trace)
 Benchmarks & agent comparison (same world, different agent)
 ```
 
-The dashboard at `/dashboard/simulations` starts runs; `/dashboard/simulations/<runId>` is the run inspector, showing the observable world, the current observation, objective progress, tasks and guardrails, the persisted activity trace, action history, run metrics, and a replay scrubber. A comparison has no UI yet: it is an API-only layer, and the runs it creates appear in the existing inspector like any other run.
+The dashboard at `/dashboard/simulations` starts runs; `/dashboard/simulations/<runId>` is the run inspector, showing the observable world, the current observation, objective progress, tasks and guardrails, the persisted activity trace, action history, run metrics, and a replay scrubber. The runs a comparison creates appear in the inspector like any other run, because they are ordinary runs.
+
+## The Console
+
+`/dashboard` is the product surface. It is a client over the engines above: it displays results the server produced and recomputes none of them. No evaluation score, robustness figure, failure category, counterfactual regret or comparison verdict is derived in the browser — the console reads a payload and renders it.
+
+| Route | What it is |
+| --- | --- |
+| `/dashboard` | The overview: what Agent Twin is, the runs already recorded for this account, the benchmark catalogue, and the six-step pipeline |
+| `/dashboard/tests` | Test creation: choose a benchmark, name the agents, set the seed, run |
+| `/dashboard/tests/<comparisonId>` | The experiment's registration and its runs, and the report the run in this browser session returned |
+| `/dashboard/benchmarks` | The standardised-test catalogue |
+| `/dashboard/benchmarks/<benchmarkId>?version=` | One benchmark at one pinned version: its environment, objective, every condition and seed, its robustness formula and its limits |
+| `/dashboard/agents` | The agent configurations this deployment can actually run, read from the build's own selection set |
+| `/dashboard/simulations` | The recorded runs, and the run starter |
+| `/dashboard/simulations/<runId>` | The run inspector and replay scrubber |
+| `/dashboard/docs` | The methodology, stated as what each engine measures and what it does not claim |
+
+Three properties of this surface are deliberate:
+
+- **Fact and interpretation are labelled.** A figure the evaluation engine produced, a condition the scenario engine applied, an action the trace recorded, and a conclusion the counterfactual engine reached are presented as what they are, with the producing engine named where a reader could otherwise mistake one for another.
+- **Absence is not zero.** A metric the evidence does not establish is rendered `unavailable` or `not recorded`, never `0`, so "the agent scored nothing" and "there is no measurement" cannot be confused.
+- **The verdict is the recorded one.** A comparison result is rendered from the deterministic `declared-discriminator-order-v1` verdict and its recorded discriminator rungs, including `TIE` and `INSUFFICIENT_EVIDENCE`. No model, and no client-side rule, decides a winner.
+
+A comparison report is deliberately not persisted, so `/dashboard/tests/<comparisonId>` shows the report only for a run made in the same browser session and says so; the runs the report was derived from are persisted, listed on the page, and the report is reproducible from them.
+
+`GET /api/benchmarks/<benchmarkId>` backs the benchmark detail page. It is a read-only projection of the same frozen server-side registry the execution path resolves against, so a page describing a benchmark cannot describe a different benchmark than the one that would run. An unknown id is a `404` with `code: "UNKNOWN_BENCHMARK"` rather than an empty definition.
 
 ## Tech Stack
 
@@ -245,7 +271,9 @@ npm run db:migrate:deploy       # apply migrations
 npm run dev                     # http://localhost:3000
 ```
 
-Then open `/dashboard/simulations`, choose an environment, objective, and seed, and start a run. The run inspector advances the agent one bounded turn at a time.
+Then open `/dashboard`. The overview links into the flow: **create a test** (choose a benchmark, name two or more agents, set the seed) → **run it** → **read the result** (which agent performed better, why, under which conditions, and what went wrong) → **open a run** from the result to inspect the trace, the failure profile, the counterfactual analysis and the replay. A single standalone run can still be started from `/dashboard/simulations`, where an environment, objective, and seed are chosen and the agent advances one bounded turn at a time.
+
+The console's test-creation flow runs a **comparison**, which executes a real matrix of simulation cases and therefore makes real provider calls. Running one costs provider credit and takes as long as the matrix takes; the page shows the runs it creates as they are persisted rather than a simulated progress bar.
 
 On a clone without a provisioned database, prefix commands with `SKIP_ENV_VALIDATION=1` to bypass env validation at build time.
 
@@ -297,14 +325,16 @@ Latest local verification, on the current working tree:
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Tests | `npm run test` | 1011 tests passing (35 test files) |
-| Lint | `npm run lint` | Passing (224 files checked) |
+| Tests | `npm run test` | 1114 tests passing (44 test files) |
+| Lint | `npm run lint` | Passing (253 files checked) |
 | Build | `npm run build` | Passing |
 | Typecheck | `npm run typecheck` | Passing |
 
 Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, the evaluation engine's scoring, determinism, purity and bounds, the scenario engine — its catalogue, each shipped scenario, validation and refusal, immutability, determinism, modifier ordering and versioning — the benchmark engine — its declarative definitions and registry, the deterministic run matrix, execution through the real simulation/agent/persistence path, aggregation, the robustness metric, the degradation table, failure analysis, the HTTP surface — the counterfactual engine: the derived action space, the decision points read out of a trace, the continuation policy, the comparison against the recorded verdict, the report's accounting and ranking, the HTTP surface, and the boundaries of every calculation module (no clock, randomness, provider, database, network or dynamic discovery) — and the comparison engine: agent configuration identity and its stability under reordering, the nested matrix and case identity, per-agent isolation, aggregation against the benchmark engine's own numbers, metric and head-to-head comparison, tie semantics, the declared verdict rule, scenario-level comparison, robustness reuse, failure profiles, the isolation of a failing agent, the HTTP surface with every error-to-status mapping, and a static boundary guard proving the calculation modules reach no clock, randomness, network, model, database or vendor name.
 
 The benchmark engine is additionally verified against a real PostgreSQL database by a separate harness that is deliberately **not** part of `npm test`: `npx vitest run --config vitest.verification.config.ts`. It runs the full twelve-step local verification — resolution, matrix, execution, isolation, scenario identity, evaluation, failure visibility, aggregate determinism, robustness arithmetic, replay and rerun — against a disposable database, with only the model provider stubbed. It creates real runs and does not remove them, so point it at a throwaway database.
+
+**Product-surface tests.** The console is tested without a browser and without a network. `src/lib/api-client.ts` is mocked at its boundary, so a test can hold a response in flight and assert what the page shows while it is loading, and can make a request fail with a specific status and assert what the page shows then. The tests assert what a reader can see — the rendered document — rather than the shape of the markup: that an unreadable catalogue is never reported as an empty account, that a comparison result with no report prints no verdict at all, that a metric the evidence does not establish is not rendered as `0`, and that no error path leaks a status code, an endpoint path or a stack into the page. Nothing in this suite reaches a provider or a database.
 
 The counterfactual engine is verified against a real PostgreSQL database by the same harness: it starts a run, records a fourteen-attempt trace through the real action endpoint (including one attempt the environment refused mid-run and one it refused after the run had already terminated), then analyses that trace through the real counterfactual endpoint — checking the report's accounting against what the database holds, asserting that the second request returns the same bytes, and asserting the identity round trip over every decision the environment accepted.
 
@@ -356,7 +386,7 @@ Separately, during scenario-engine verification (2026-09-13) the OpenRouter key 
 - Scenario & adversarial engine: seven versioned, declarative environmental conditions applied deterministically before a run starts, with per-field change records and no new scoring
 - Scenario identity persisted with each run and recorded as a `scenario.applied` system event, with reruns pinned to the recorded version
 - Benchmark & robustness engine: a declarative, versioned benchmark definition (`resource-routing-robustness@1`) resolved from a frozen server-side registry, expanded into a deterministic scenarios × seeds run matrix, executed through the existing simulation, scenario, agent, persistence and evaluation seams, and aggregated into a deterministic `BenchmarkResult` — including a documented retention-based robustness metric (`baseline-retention-v1`), a per-scenario degradation table and an evidence-based failure analysis
-- `GET /api/benchmarks` serving the benchmark catalogue, and `POST /api/benchmarks/<benchmarkId>/run` executing a benchmark and returning the report
+- `GET /api/benchmarks` serving the benchmark catalogue, `GET /api/benchmarks/<benchmarkId>` serving one benchmark at one pinned version as a read-only projection of the same frozen registry the execution path resolves against, and `POST /api/benchmarks/<benchmarkId>/run` executing a benchmark and returning the report
 - Counterfactual & causal analysis engine: deterministic counterfactual transitions built from the decision points of an existing persisted trace, through the environment's own validator and the existing evaluation engine — no second simulation, no model call, no new scoring formula. Every number in a report is stated under three named policies (`enumerated-valid-actions-v1`, `replay-recorded-attempts-v1`, `held-constant-non-environment-evidence-v1`); the engine's central property is that replaying the recorded choice as its own alternative reproduces the recorded run exactly, attempt for attempt
 - `GET /api/simulations/runs/<runId>/counterfactual` serving the whole-run report — per-decision regret, the action space, the ranking, and the decision that gave up the most — and `?decision=<index>` serving one decision point with every alternative's counterfactual state and verdict
 - Agent / model comparison engine: a typed, provider-agnostic agent configuration whose identity is derived from its fields rather than from array position or an unordered serialisation; an experiment that fixes the benchmark, scenarios, seeds, objective and methodology while the caller supplies only the agents; a matrix nesting the comparison dimension around the benchmark engine's own; per-case isolation through the ordinary turn path; per-agent aggregation that re-expresses the benchmark engine's numbers and leaves an unmeasurable metric `null` rather than zero; head-to-head and scenario-level comparison with explicit tie handling; and a deterministic verdict (`declared-discriminator-order-v1`) walked over a declared discriminator order with every rung recorded — no LLM judge anywhere in the path
@@ -364,8 +394,9 @@ Separately, during scenario-engine verification (2026-09-13) the OpenRouter key 
 - `GET /api/scenarios` serving the catalogue, and an optional `scenarioId` on run creation
 - `GET /api/simulations/runs/<runId>/evaluation` serving the verdict alongside the raw metric set behind it
 - Dashboard run starter and run inspector
+- The Agent Twin console: an overview, a test-creation flow, benchmark catalogue and detail pages, an agents page, a comparison result page, and a methodology page — all render-only over the engines above, with fact and interpretation labelled, absence rendered `unavailable` rather than `0`, and the comparison verdict rendered from the recorded deterministic rule
 - Provider error classification, with no credential or raw-response persistence
-- Local verification gates green: 1011 tests, lint, production build, typecheck
+- Local verification gates green: 1114 tests, lint, production build, typecheck
 - Migration deployment verified against a fresh disposable PostgreSQL database, with no schema drift
 - Benchmark execution verified end-to-end against a disposable PostgreSQL database, with only the model provider stubbed
 - Counterfactual analysis verified end-to-end against a disposable PostgreSQL database: a real trace recorded through the real action endpoint, analysed through the real counterfactual endpoint, with the report's accounting checked against what the database actually holds and the identity round trip asserted over every accepted decision
@@ -387,10 +418,10 @@ OpenRouter has been exercised end-to-end against a live endpoint. A separate liv
 None of the following is implemented. They are listed to mark direction, not capability:
 
 - LLM-generated or automatically discovered scenarios and benchmarks, and a scenario or benchmark editor UI
-- Cross-run and cross-model comparison, and pass/fail thresholds built on the evaluation scores
+- Pass/fail thresholds built on the evaluation scores, and cross-run trend analysis over many runs
 - Scenario-specific scoring, and robustness metrics beyond `baseline-retention-v1`
 - Parallel benchmark execution — the current runner is sequential by design
-- Agent benchmarking across models and configurations on fixed seeds, and a comparison dashboard
+- Persisted comparison reports and a shareable result permalink — a comparison report is held in the browser session that ran it and is reproducible from the persisted runs, but it is not stored
 - Additional professional environments beyond resource routing
 
 ## Hackathon

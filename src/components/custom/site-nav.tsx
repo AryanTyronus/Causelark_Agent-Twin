@@ -50,6 +50,19 @@ function visibleItems(group: NavGroup, isAuthenticated: boolean): NavItem[] {
     );
 }
 
+/**
+ * Whether a route brings its own chrome.
+ *
+ * The console is a complete application shell: its own header, its own
+ * destination list, its own operator identity. The site nav and footer belong to
+ * the public pages around it, so on the console's routes they stand down —
+ * otherwise every console page renders two headers stacked and a marketing
+ * footer under an instrument panel.
+ */
+function bringsItsOwnChrome(pathname: string): boolean {
+  return pathname === '/dashboard' || pathname.startsWith('/dashboard/');
+}
+
 // Inline top-bar slots (a slot = one link OR one `menu` dropdown), capped so the
 // bar can't grow wide. Kept here (not a sibling module) so a template upgrade
 // re-stamps the whole nav as one user-owned file rather than seeding an orphan.
@@ -119,6 +132,9 @@ export function SiteNav() {
     href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
   const isSlotActive = (slot: NavSlot) =>
     slot.type === 'link' ? isActive(slot.item.href) : slot.items.some((i) => isActive(i.href));
+
+  // Every hook above has run, so the console can bow out here.
+  if (bringsItsOwnChrome(pathname)) return null;
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -342,8 +358,11 @@ export function SiteNav() {
 
 export function SiteFooter() {
   const isAuthenticated = useIsAuthenticated();
+  // Called before the early return below so the hook order is the same on every
+  // route — the console navigates between guarded and unguarded pages by design.
+  const pathname = usePathname();
   const footer = visibleItems('footer', isAuthenticated);
-  if (footer.length === 0) return null;
+  if (footer.length === 0 || bringsItsOwnChrome(pathname)) return null;
 
   return (
     <footer className="border-t border-border">

@@ -207,6 +207,8 @@ Deterministic simulation
 Prisma/PostgreSQL persistence
  ↓
 Metrics / Replay / Evaluation
+ ↓
+Counterfactual analysis (derived from a recorded trace)
 ```
 
 The dashboard at `/dashboard/simulations` starts runs; `/dashboard/simulations/<runId>` is the run inspector, showing the observable world, the current observation, objective progress, tasks and guardrails, the persisted activity trace, action history, run metrics, and a replay scrubber.
@@ -291,14 +293,16 @@ Latest local verification, on the current working tree:
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Tests | `npm run test` | 621 tests passing (25 test files) |
-| Lint | `npm run lint` | Passing (186 files checked) |
+| Tests | `npm run test` | 785 tests passing (29 test files) |
+| Lint | `npm run lint` | Passing (202 files checked) |
 | Build | `npm run build` | Passing |
 | Typecheck | `npm run typecheck` | Passing |
 
-Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, the evaluation engine's scoring, determinism, purity and bounds, the scenario engine — its catalogue, each shipped scenario, validation and refusal, immutability, determinism, modifier ordering and versioning — and the benchmark engine: its declarative definitions and registry, the deterministic run matrix, execution through the real simulation/agent/persistence path, aggregation, the robustness metric, the degradation table, failure analysis, the HTTP surface, and the boundaries of every calculation module (no clock, randomness, provider, database, network or dynamic discovery).
+Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, the evaluation engine's scoring, determinism, purity and bounds, the scenario engine — its catalogue, each shipped scenario, validation and refusal, immutability, determinism, modifier ordering and versioning — the benchmark engine — its declarative definitions and registry, the deterministic run matrix, execution through the real simulation/agent/persistence path, aggregation, the robustness metric, the degradation table, failure analysis, the HTTP surface — and the counterfactual engine: the derived action space, the decision points read out of a trace, the continuation policy, the comparison against the recorded verdict, the report's accounting and ranking, the HTTP surface, and the boundaries of every calculation module (no clock, randomness, provider, database, network or dynamic discovery).
 
 The benchmark engine is additionally verified against a real PostgreSQL database by a separate harness that is deliberately **not** part of `npm test`: `npx vitest run --config vitest.verification.config.ts`. It runs the full twelve-step local verification — resolution, matrix, execution, isolation, scenario identity, evaluation, failure visibility, aggregate determinism, robustness arithmetic, replay and rerun — against a disposable database, with only the model provider stubbed. It creates real runs and does not remove them, so point it at a throwaway database.
+
+The counterfactual engine is verified against a real PostgreSQL database by the same harness: it starts a run, records a fourteen-attempt trace through the real action endpoint (including one attempt the environment refused mid-run and one it refused after the run had already terminated), then analyses that trace through the real counterfactual endpoint — checking the report's accounting against what the database holds, asserting that the second request returns the same bytes, and asserting the identity round trip over every decision the environment accepted.
 
 Migration deployment was verified separately: all four migrations apply cleanly to a fresh disposable PostgreSQL database, `prisma migrate status` reports the schema up to date, and `prisma migrate diff` is empty in both directions — no schema drift.
 
@@ -324,13 +328,16 @@ Separately, during scenario-engine verification (2026-09-13) the OpenRouter key 
 - Scenario identity persisted with each run and recorded as a `scenario.applied` system event, with reruns pinned to the recorded version
 - Benchmark & robustness engine: a declarative, versioned benchmark definition (`resource-routing-robustness@1`) resolved from a frozen server-side registry, expanded into a deterministic scenarios × seeds run matrix, executed through the existing simulation, scenario, agent, persistence and evaluation seams, and aggregated into a deterministic `BenchmarkResult` — including a documented retention-based robustness metric (`baseline-retention-v1`), a per-scenario degradation table and an evidence-based failure analysis
 - `GET /api/benchmarks` serving the benchmark catalogue, and `POST /api/benchmarks/<benchmarkId>/run` executing a benchmark and returning the report
+- Counterfactual & causal analysis engine: deterministic counterfactual transitions built from the decision points of an existing persisted trace, through the environment's own validator and the existing evaluation engine — no second simulation, no model call, no new scoring formula. Every number in a report is stated under three named policies (`enumerated-valid-actions-v1`, `replay-recorded-attempts-v1`, `held-constant-non-environment-evidence-v1`); the engine's central property is that replaying the recorded choice as its own alternative reproduces the recorded run exactly, attempt for attempt
+- `GET /api/simulations/runs/<runId>/counterfactual` serving the whole-run report — per-decision regret, the action space, the ranking, and the decision that gave up the most — and `?decision=<index>` serving one decision point with every alternative's counterfactual state and verdict
 - `GET /api/scenarios` serving the catalogue, and an optional `scenarioId` on run creation
 - `GET /api/simulations/runs/<runId>/evaluation` serving the verdict alongside the raw metric set behind it
 - Dashboard run starter and run inspector
 - Provider error classification, with no credential or raw-response persistence
-- Local verification gates green: 621 tests, lint, production build, typecheck
+- Local verification gates green: 785 tests, lint, production build, typecheck
 - Migration deployment verified against a fresh disposable PostgreSQL database, with no schema drift
 - Benchmark execution verified end-to-end against a disposable PostgreSQL database, with only the model provider stubbed
+- Counterfactual analysis verified end-to-end against a disposable PostgreSQL database: a real trace recorded through the real action endpoint, analysed through the real counterfactual endpoint, with the report's accounting checked against what the database actually holds and the identity round trip asserted over every accepted decision
 
 ### Provider verification
 
@@ -351,7 +358,6 @@ None of the following is implemented. They are listed to mark direction, not cap
 - Cross-run and cross-model comparison, and pass/fail thresholds built on the evaluation scores
 - Scenario-specific scoring, and robustness metrics beyond `baseline-retention-v1`
 - Parallel benchmark execution — the current runner is sequential by design
-- Counterfactual and branching simulations that fork a run from a checkpoint
 - Agent benchmarking across models and configurations on fixed seeds, and a comparison dashboard
 - Additional professional environments beyond resource routing
 

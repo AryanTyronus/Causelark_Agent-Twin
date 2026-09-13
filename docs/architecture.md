@@ -20,6 +20,11 @@ perturbation of that baseline, applied before the run exists (see Scenarios).
   modules are as pure as the two layers above; `execute.ts` is the one declared
   integration seam, and it is the only file in the layer that may import a
   database, an environment variable or the agent runtime (see Benchmarks).
+- `src/lib/counterfactual/` owns the counterfactual and causal analysis of a run
+  that has already been recorded. Eight of its nine modules are pure folds over
+  persisted evidence; `execute.ts` is the one declared integration seam, and it
+  reads a run only through the owner-scoped persistence layer and the shared
+  evaluation mapping (see Counterfactuals).
 - `src/lib/agent/provider.ts` is the replaceable provider boundary. The runtime
   uses the official Strands Agents TypeScript SDK with one of two selectable
   model clients, both from that SDK: `BedrockModel`
@@ -470,6 +475,122 @@ actually produced its runs. The engine stays provider-agnostic: it never imports
 a model client and never branches on which provider is configured, and it names
 the deployed configuration by asking the provider boundary once.
 
+## Counterfactuals
+
+A counterfactual answers the two questions the single-run layers cannot: *what
+would have happened if the agent had taken a different valid action?* and *how
+much did a specific decision contribute to the outcome?* It is a **derived**
+statement about a run that already exists — it is never evidence the environment
+recorded, and nothing about it is ever written back as if it were.
+
+```
+Recorded trace → Decision points → Action space at each point
+  → Environment's own transition → Counterfactual continuation
+  → Evaluation engine's verdict on both branches → Report
+```
+
+**The analysis is computed from three things and nothing else:** the persisted
+evidence of a run, the environment's own deterministic transition function, and
+the existing evaluation engine's verdict on both the real and the alternative
+trajectory. There is no second simulation, no agent run, no model call, and no
+score computed in this layer. `src/lib/counterfactual/` names the three
+assumptions every number in it is stated under, and carries all three into the
+report, because an unexplained *"would have scored 87"* is not a finding:
+
+- **`enumerated-valid-actions-v1`** — *which actions were considered.* The action
+  space is **derived, not restated**: the amount range is read back out of
+  `SimulationActionInput` by probing it, so a change to the contract moves the
+  space with it instead of leaving a copy behind that disagrees. The space is
+  ordered by named arrays — type, then resource, then amount — and every
+  candidate's verdict is `evaluateSimulationAction`'s, not a re-derivation. A
+  `rest` action ignores its resource, so two requests differing only in that
+  meaningless field are canonicalised into one alternative.
+- **`replay-recorded-attempts-v1`** — *what happens after the intervention.*
+  Every attempt the recorded run made after the decision point is re-requested,
+  in recorded order, against the counterfactual world, through the same
+  validator, and the environment answers each one afresh. A request the altered
+  world can no longer satisfy is recorded as refused; one it can now satisfy is
+  recorded as accepted. Neither is assumed.
+- **`held-constant-non-environment-evidence-v1`** — *what is held equal.* The
+  event trace, the tool calls, the budget limit, the turn count and turn budget,
+  the initial state and the scenario identity are carried over unchanged. The two
+  branches then differ only in the consequences of the choice being examined.
+
+**Refusals are replayed too, including attempts made after the run ended.** Two
+consequences of the evaluation engine's design force this. It scores
+`rejectedAttempts` as a quantity, so a branch that replayed only the accepted
+transitions would be handed a cleaner record than the run it is compared against
+— and it would be scored on a run whose agent never made those refusals. And the
+runtime demonstrably does record requests made after termination (the environment
+answers them `TERMINAL_RUN`), so *"the agent would have stopped"* is an
+assumption the evidence contradicts. Replaying the attempt pattern and letting
+the environment re-answer keeps the refusal count a property of the choice rather
+than an artefact of the policy. A branch that ends the run early therefore
+carries the remaining attempts as refusals; `terminatedEarly` says the world
+ended before the attempt pattern ran out, and `accepted`/`rejected` are counted
+separately so a branch that succeeded early is not silently read as one that kept
+working.
+
+**The engine's central correctness property is an identity.** Replaying the
+recorded choice as its own alternative reproduces the recorded run exactly —
+same world, same terminal status, same attempt pattern, same verdict — differing
+only in the branch label on `runId`. This is asserted over every accepted decision
+of a real persisted run in the verification harness, and it is the property that
+makes every other number credible: an engine that gets the recorded choice wrong
+gets every alternative wrong too.
+
+**A branch's terminal status is the environment's answer first.** A branch that
+reaches the objective, exhausts its budget or breaches the risk threshold ends
+the way the environment says it ends, regardless of how the recorded run
+finished. Only when the environment leaves the branch `RUNNING` does a
+non-environment ending carry over — a run stopped by its turn budget or by a
+provider fault stopped for a reason the intervention could not have changed, so
+that ending is held constant along with the rest of the non-environment
+evidence. Anything else is a snapshot, reported as `RUNNING`, which is what a
+branch the environment never terminated actually is.
+
+**What a report carries, and what it does not.** A dozen decisions produce
+hundreds of alternatives, each with its own world and verdict; a report that
+carried all of them would be unusable as an answer. So the whole-run report
+carries per-decision aggregates — the size of the space, the improving /
+equivalent / worsening / uncontested split, the best and worst alternative in
+full, the mean, the regret, and at most three outcome-flipping alternatives with
+the count behind them — plus the ranking and the critical decision. The full
+alternative list, with every counterfactual `SimulationState` and
+`EvaluationResult`, is one drill-down away.
+
+**Regret is not a causal claim.** *Regret* is the recorded verdict subtracted
+from the best alternative's verdict, and `0` means no alternative the engine
+could construct would have scored higher — not that the choice was optimal in any
+wider sense. Every generated string is template-derived from those numbers, and
+no generated string asserts that a decision caused an outcome; the engine says so
+out loud in the modules that could otherwise imply it. Where the engine needs
+exact decimal arithmetic it imports the benchmark layer's, rather than growing a
+second rounding rule.
+
+**Nothing about an analysis is persisted, and nothing is written.** No
+`CounterfactualReport` is stored, the endpoint creates no run, and the analysis
+reads its evidence through the owner-scoped `loadRun`. A run that is not the
+caller's and a run that does not exist get byte-identical answers, so the endpoint
+cannot be used to learn whether someone else's run id exists.
+
+| Endpoint | Serves |
+| --- | --- |
+| `GET /api/simulations/runs/<runId>/counterfactual` | The whole-run `CounterfactualReport` |
+| `GET /api/simulations/runs/<runId>/counterfactual?decision=<index>` | One decision point's `CounterfactualDecisionAnalysis`, with every alternative |
+
+Neither endpoint takes a body: a caller cannot submit evidence, an action space,
+a continuation policy or a scoring rule. `?decision=` accepts only a plain,
+bounded run of digits — `1.5` and `1abc` are a `400`, not decision 1, because
+`Number.parseInt` would silently read them as one. A decision index the run does
+not have is a `400`; evidence too large to analyse honestly (more than 64 decision
+points) is a `409`, never a silent truncation, because a report that quietly
+analysed the first N decisions would read as a statement about the whole run.
+`src/lib/business/simulation-evaluation.ts` exposes the persisted-run →
+`EvaluationInput` mapping the analysis shares with benchmark execution, so a
+benchmark case, an operator-opened run and a counterfactual branch are all
+described to the evaluator identically.
+
 ## Persistence
 
 Simulation tables are app-owned. They are created by forward-only, purely
@@ -479,7 +600,9 @@ additive user-owned migrations
 nullable scenario columns to `SimulationRun`); the framework-owned better-auth
 migrations and `migration_lock.toml` are untouched. The benchmark layer adds no
 migration at all: it stores nothing of its own, and the runs it creates are
-ordinary runs in the tables above.
+ordinary runs in the tables above. The counterfactual layer adds no migration and
+no column either: it stores nothing, and it analyses an existing trace through
+`loadRun`, reading exactly the tables a replay and an evaluation already read.
 
 ## Extension points
 
@@ -494,7 +617,11 @@ the environment or the agent runtime. New benchmarks belong in the benchmark
 definition list as data — an environment, an objective, scenario references and
 seeds — and a new *kind* of robustness metric belongs as a new named formula
 beside `baseline-retention-v1`, versioned and documented, rather than as a change
-to what the existing one means.
+to what the existing one means. A new continuation assumption belongs as a new
+named, versioned policy in the counterfactual layer, stated in the report
+alongside the one it replaces — never as a change to what
+`replay-recorded-attempts-v1` means, because two reports that name the same
+policy must be comparable.
 
 ## Legacy surface
 

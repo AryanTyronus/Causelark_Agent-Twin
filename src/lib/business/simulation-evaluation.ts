@@ -1,10 +1,12 @@
 // @polsia:user-owned — persisted run → evaluation verdict.
 //
 // The mapping from a stored run row to `EvaluationInput` lives here, in one
-// place, because two callers need it and they must not drift: the evaluation
-// endpoint, which serves a single run's verdict, and benchmark execution, which
-// evaluates every case it ran. A benchmark that mapped evidence differently from
-// the endpoint would be reporting on a run nobody else can see.
+// place, because three callers need it and they must not drift: the evaluation
+// endpoint, which serves a single run's verdict; benchmark execution, which
+// evaluates every case it ran; and counterfactual analysis, which needs the
+// evidence set itself rather than a verdict, so that it can build an alternative
+// branch and score *that* through the same evaluator. Callers that mapped
+// evidence differently would be reporting on runs nobody else can see.
 //
 // Nothing about the *scoring* is here — that is `src/lib/evaluation`. This is
 // only deserialization: the run's own columns, read back through the contracts.
@@ -15,7 +17,7 @@ import {
   SimulationState,
 } from '@/lib/contracts/simulation';
 import { evaluateRun } from '@/lib/evaluation/evaluation';
-import type { EvaluationResult } from '@/lib/evaluation/types';
+import type { EvaluationInput, EvaluationResult } from '@/lib/evaluation/types';
 import { DEFAULT_CONFIGURATION } from './simulation';
 import {
   type PersistedRun,
@@ -26,14 +28,14 @@ import {
 } from './simulation-persistence';
 
 /**
- * Evaluate a persisted run from the evidence it recorded.
+ * Describe a persisted run to the evaluator.
  *
  * A run with no `initialState` column falls back to its current state, which is
  * what the evaluation endpoint has always done: the column is nullable for rows
  * created before it existed.
  */
-export function evaluatePersistedRun(run: PersistedRun): EvaluationResult {
-  return evaluateRun({
+export function toEvaluationInput(run: PersistedRun): EvaluationInput {
+  return {
     runId: run.id,
     status: SimulationRunStatus.parse(run.status),
     state: SimulationState.parse(run.state),
@@ -50,5 +52,15 @@ export function evaluatePersistedRun(run: PersistedRun): EvaluationResult {
     // Context, not input to a score: it lets a verdict be labelled with the
     // condition it was measured under.
     scenario: toScenarioIdentity(run),
-  });
+  };
+}
+
+/**
+ * Evaluate a persisted run from the evidence it recorded.
+ *
+ * The verdict is the evaluation engine's; this composes the two steps so every
+ * caller reads a run the same way.
+ */
+export function evaluatePersistedRun(run: PersistedRun): EvaluationResult {
+  return evaluateRun(toEvaluationInput(run));
 }

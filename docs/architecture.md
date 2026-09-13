@@ -16,11 +16,12 @@ initial state, and advances through a request-driven `agent-step` endpoint.
   Converse API through `@aws-sdk/client-bedrock-runtime` and is the intended
   production/hackathon provider; and `OpenAIModel`
   (`@strands-agents/sdk/models/openai`) in Chat Completions mode, which points at
-  AgentRouter and exists so the Agent Twin can run locally before AWS credentials
-  are available. Nothing else in `src/lib/agent/**` constructs a model client,
-  and no agent-path module imports the raw `openai` package or the Polsia AI
-  proxy.
-- Provider selection is `AGENT_PROVIDER`: `bedrock` (default) or `agentrouter`.
+  OpenRouter's OpenAI-compatible endpoint and exists so the Agent Twin can run
+  locally before AWS credentials are available, and so a different model can be
+  exercised without changing the agent runtime. Nothing else in
+  `src/lib/agent/**` constructs a model client, and no agent-path module imports
+  the raw `openai` package or the Polsia AI proxy.
+- Provider selection is `AGENT_PROVIDER`: `bedrock` (default) or `openrouter`.
   It is explicit and never falls back — an unrecognised value fails the turn with
   a visible configuration error rather than quietly running the other provider.
   Because the same bounded Strands agent, the same allow-listed tools, and the
@@ -33,11 +34,12 @@ initial state, and advances through a request-driven `agent-step` endpoint.
   the deployment identity needs `bedrock:InvokeModel` /
   `bedrock:InvokeModelWithResponseStream` on the configured model. Model ID and
   region are configuration, not code: `BEDROCK_MODEL_ID` (required),
-  `BEDROCK_REGION`, then `AWS_REGION`. The AgentRouter key is server-only
-  configuration (`AGENTROUTER_API_KEY`, with optional `AGENTROUTER_BASE_URL`
-  defaulting to `https://agentrouter.org/v1` and `AGENTROUTER_MODEL` defaulting
-  to `deepseek-v4-flash`); it is passed to the model client and is never sent to
-  the browser, persisted with a turn, or written to a log.
+  `BEDROCK_REGION`, then `AWS_REGION`. The OpenRouter key is server-only
+  configuration (`OPENROUTER_API_KEY`, with `OPENROUTER_MODEL` also required and
+  `OPENROUTER_BASE_URL` defaulting to `https://openrouter.ai/api/v1`); it is
+  passed to the model client and is never sent to the browser, persisted with a
+  turn, or written to a log. Neither provider has a default model: an unset
+  model fails the turn rather than running a model the operator did not choose.
 - `resource-tools.ts` exposes only `observe_resources` and `request_action`.
   Tool inputs are schema-validated, and every result passes through the same
   deterministic environment validator as the manual operator path.

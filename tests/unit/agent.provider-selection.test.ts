@@ -1,16 +1,16 @@
 // @vitest-environment node
-// @polsia:user-owned — provider selection between Bedrock and AgentRouter.
+// @polsia:user-owned — provider selection between Bedrock and OpenRouter.
 //
-// AgentRouter is the development provider; Bedrock stays the intended AWS one.
+// OpenRouter is the development provider; Bedrock stays the intended AWS one.
 // These tests hold the selection contract itself: which provider a given
 // configuration selects, that an unreadable value fails instead of falling back,
-// that each provider builds only its own model client, and that the AgentRouter
+// that each provider builds only its own model client, and that the OpenRouter
 // credential never reaches a persisted or returned value.
 //
 // The Strands SDK and both model clients are mocked at the provider boundary, so
-// no test here needs an AgentRouter API key, an AWS credential, or a network
-// call. The real AgentRouter round trip is verified separately, under an
-// explicit credential, outside the normal suite.
+// no test here needs an OpenRouter API key, an AWS credential, or a network
+// call. A real OpenRouter round trip is a separate, live boundary: it is not
+// exercised here and is not claimed by this suite.
 
 import OpenAI from 'openai';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -18,9 +18,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   env: {} as {
     AGENT_PROVIDER?: string | undefined;
-    AGENTROUTER_BASE_URL?: string | undefined;
-    AGENTROUTER_API_KEY?: string | undefined;
-    AGENTROUTER_MODEL?: string | undefined;
+    OPENROUTER_BASE_URL?: string | undefined;
+    OPENROUTER_API_KEY?: string | undefined;
+    OPENROUTER_MODEL?: string | undefined;
     BEDROCK_MODEL_ID?: string | undefined;
     BEDROCK_REGION?: string | undefined;
     AWS_REGION?: string | undefined;
@@ -70,19 +70,18 @@ import {
   AGENT_MAX_OUTPUT_TOKENS,
   AGENT_PROVIDER_SAFE_MESSAGES,
   AGENT_PROVIDER_SELECTION_MESSAGE,
-  AGENTROUTER_SAFE_MESSAGES,
-  AGENTROUTER_STRANDS_PROVIDER,
   AgentProviderError,
   agentProviderLabel,
   BEDROCK_STRANDS_PROVIDER,
   classifyProviderError,
   DEFAULT_AGENT_PROVIDER,
-  DEFAULT_AGENTROUTER_BASE_URL,
-  DEFAULT_AGENTROUTER_MODEL,
+  DEFAULT_OPENROUTER_BASE_URL,
   invokeResourceAgent,
+  OPENROUTER_SAFE_MESSAGES,
+  OPENROUTER_STRANDS_PROVIDER,
   type ResourceAgentInvocation,
   resolveAgentProvider,
-  resolveAgentRouterConfiguration,
+  resolveOpenRouterConfiguration,
   selectedProviderLabel,
   toAgentProviderError,
 } from '@/lib/agent/provider';
@@ -90,7 +89,13 @@ import { createInitialSimulationState } from '@/lib/business/simulation';
 
 const BEDROCK_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
 /** A value that must never appear in a returned or persisted field. */
-const API_KEY = 'sk-agentrouter-test-key-that-must-not-leak';
+const API_KEY = 'sk-openrouter-test-key-that-must-not-leak';
+/**
+ * An arbitrary catalogue ID. The suite deliberately does not treat any model as
+ * *the* OpenRouter model: the model is configuration, and the tests below assert
+ * only that whatever is configured is what reaches the client.
+ */
+const OPENROUTER_MODEL = 'vendor/model-under-test';
 
 const state = createInitialSimulationState('resource-routing', 'complete-delivery', 9182);
 const stubTools = [{ name: 'observe_resources' }, { name: 'request_action' }] as unknown as Tool[];
@@ -127,9 +132,10 @@ async function invoke(overrides: Partial<ResourceAgentInvocation> = {}) {
   });
 }
 
-function configureAgentRouter(overrides: Record<string, string | undefined> = {}) {
-  mocks.env.AGENT_PROVIDER = 'agentrouter';
-  mocks.env.AGENTROUTER_API_KEY = API_KEY;
+function configureOpenRouter(overrides: Record<string, string | undefined> = {}) {
+  mocks.env.AGENT_PROVIDER = 'openrouter';
+  mocks.env.OPENROUTER_API_KEY = API_KEY;
+  mocks.env.OPENROUTER_MODEL = OPENROUTER_MODEL;
   Object.assign(mocks.env, overrides);
 }
 
@@ -147,7 +153,7 @@ afterEach(() => {
 
 describe('AGENT_PROVIDER selection', () => {
   it.each([
-    ['agentrouter', 'agentrouter'],
+    ['openrouter', 'openrouter'],
     ['bedrock', 'bedrock'],
   ])('selects %s when AGENT_PROVIDER=%s', (configured, expected) => {
     expect(resolveAgentProvider({ AGENT_PROVIDER: configured })).toBe(expected);
@@ -160,37 +166,46 @@ describe('AGENT_PROVIDER selection', () => {
     expect(resolveAgentProvider({ AGENT_PROVIDER: '   ' })).toBe('bedrock');
   });
 
-  it.each([['AgentRouter'], ['BEDROCK'], ['openai'], ['bedrock '], ['agent-router'], ['']])(
-    'fails safely on the unreadable value %j rather than guessing a provider',
-    (configured) => {
-      // A trailing-space value is the one exception: it trims to a known
-      // provider. Every other value must fail.
-      if (configured === 'bedrock ') {
-        expect(resolveAgentProvider({ AGENT_PROVIDER: configured })).toBe('bedrock');
-        return;
+  it.each([
+    // The removed provider is not a recognised value: a deployment still
+    // carrying AGENT_PROVIDER=agentrouter must fail loudly, not run Bedrock.
+    ['agentrouter'],
+    ['AgentRouter'],
+    ['OpenRouter'],
+    ['BEDROCK'],
+    ['openai'],
+    ['bedrock '],
+    ['open-router'],
+    [''],
+  ])('fails safely on the unreadable value %j rather than guessing a provider', (configured) => {
+    // A trailing-space value is the one exception: it trims to a known
+    // provider. Every other value must fail.
+    if (configured === 'bedrock ') {
+      expect(resolveAgentProvider({ AGENT_PROVIDER: configured })).toBe('bedrock');
+      return;
+    }
+    const error = (() => {
+      try {
+        return resolveAgentProvider({ AGENT_PROVIDER: configured });
+      } catch (thrown: unknown) {
+        return thrown;
       }
-      const error = (() => {
-        try {
-          return resolveAgentProvider({ AGENT_PROVIDER: configured });
-        } catch (thrown: unknown) {
-          return thrown;
-        }
-      })();
+    })();
 
-      if (configured === '') {
-        // An empty string is "unset" under emptyStringAsUndefined, not a typo.
-        expect(error).toBe('bedrock');
-        return;
-      }
-      expect(error).toBeInstanceOf(AgentProviderError);
-      expect((error as AgentProviderError).code).toBe('missing_configuration');
-      expect((error as AgentProviderError).message).toBe(AGENT_PROVIDER_SELECTION_MESSAGE);
-    },
-  );
+    if (configured === '') {
+      // An empty string is "unset" under emptyStringAsUndefined, not a typo.
+      expect(error).toBe('bedrock');
+      return;
+    }
+    expect(error).toBeInstanceOf(AgentProviderError);
+    expect((error as AgentProviderError).code).toBe('missing_configuration');
+    expect((error as AgentProviderError).message).toBe(AGENT_PROVIDER_SELECTION_MESSAGE);
+  });
 
   it('never falls back to another provider: a bad selection builds no model at all', async () => {
     mocks.env.AGENT_PROVIDER = 'gpt';
-    mocks.env.AGENTROUTER_API_KEY = API_KEY;
+    mocks.env.OPENROUTER_API_KEY = API_KEY;
+    mocks.env.OPENROUTER_MODEL = OPENROUTER_MODEL;
     mocks.env.BEDROCK_MODEL_ID = BEDROCK_MODEL_ID;
     mocks.invokeResult = usageResult();
 
@@ -210,47 +225,80 @@ describe('AGENT_PROVIDER selection', () => {
 describe('provider labels', () => {
   it('labels each provider distinctly so a run is never ambiguous', () => {
     expect(agentProviderLabel('bedrock')).toBe(BEDROCK_STRANDS_PROVIDER);
-    expect(agentProviderLabel('agentrouter')).toBe(AGENTROUTER_STRANDS_PROVIDER);
-    expect(AGENTROUTER_STRANDS_PROVIDER).not.toBe(BEDROCK_STRANDS_PROVIDER);
+    expect(agentProviderLabel('openrouter')).toBe(OPENROUTER_STRANDS_PROVIDER);
+    expect(OPENROUTER_STRANDS_PROVIDER).not.toBe(BEDROCK_STRANDS_PROVIDER);
   });
 
   it('labels the selected provider without throwing, including on a bad selection', () => {
     expect(selectedProviderLabel({})).toBe(BEDROCK_STRANDS_PROVIDER);
-    expect(selectedProviderLabel({ AGENT_PROVIDER: 'agentrouter' })).toBe(
-      AGENTROUTER_STRANDS_PROVIDER,
+    expect(selectedProviderLabel({ AGENT_PROVIDER: 'openrouter' })).toBe(
+      OPENROUTER_STRANDS_PROVIDER,
     );
-    // Never claims AgentRouter on an unreadable value, and never throws on the
+    // Never claims OpenRouter on an unreadable value, and never throws on the
     // failure path where the label still has to be recorded.
     expect(selectedProviderLabel({ AGENT_PROVIDER: 'nonsense' })).toBe(BEDROCK_STRANDS_PROVIDER);
+    // The removed provider is not a label this build can produce.
+    expect(selectedProviderLabel({ AGENT_PROVIDER: 'agentrouter' })).toBe(BEDROCK_STRANDS_PROVIDER);
+  });
+
+  it('never names a removed provider in any safe message', () => {
+    const messages = [
+      ...Object.values(OPENROUTER_SAFE_MESSAGES),
+      ...Object.values(AGENT_PROVIDER_SAFE_MESSAGES),
+      AGENT_PROVIDER_SELECTION_MESSAGE,
+    ];
+    for (const message of messages) expect(message).not.toMatch(/agentrouter/i);
   });
 });
 
-describe('AgentRouter configuration', () => {
-  it('defaults to the current AgentRouter endpoint and the DeepSeek development model', () => {
-    expect(DEFAULT_AGENTROUTER_BASE_URL).toBe('https://agentrouter.org/v1');
-    expect(DEFAULT_AGENTROUTER_BASE_URL).toMatch(/^https:\/\/agentrouter\.org/);
-    // The retired origin must not reappear anywhere in the provider.
-    expect(DEFAULT_AGENTROUTER_BASE_URL).not.toContain('co.agentrouter.org');
-    expect(DEFAULT_AGENTROUTER_MODEL).toBe('deepseek-v4-flash');
+describe('OpenRouter configuration', () => {
+  it('defaults to the OpenRouter OpenAI-compatible endpoint', () => {
+    expect(DEFAULT_OPENROUTER_BASE_URL).toBe('https://openrouter.ai/api/v1');
 
-    expect(resolveAgentRouterConfiguration({ AGENTROUTER_API_KEY: API_KEY })).toEqual({
-      baseUrl: 'https://agentrouter.org/v1',
+    expect(
+      resolveOpenRouterConfiguration({
+        OPENROUTER_API_KEY: API_KEY,
+        OPENROUTER_MODEL: OPENROUTER_MODEL,
+      }),
+    ).toEqual({
+      baseUrl: 'https://openrouter.ai/api/v1',
       apiKey: API_KEY,
-      modelId: 'deepseek-v4-flash',
+      modelId: OPENROUTER_MODEL,
     });
   });
 
-  it('honours an overridden endpoint and model, so the endpoint is configuration', () => {
+  it('has no default model, so the model is always an explicit choice', () => {
+    // Configuration rather than a baked-in catalogue entry: an unchosen model
+    // must fail rather than silently run and bill against one.
+    const error = (() => {
+      try {
+        return resolveOpenRouterConfiguration({
+          OPENROUTER_API_KEY: API_KEY,
+          OPENROUTER_MODEL: undefined,
+        });
+      } catch (thrown: unknown) {
+        return thrown;
+      }
+    })();
+
+    expect(error).toBeInstanceOf(AgentProviderError);
+    expect((error as AgentProviderError).code).toBe('missing_configuration');
+    expect((error as AgentProviderError).message).toBe(
+      OPENROUTER_SAFE_MESSAGES.missing_configuration,
+    );
+  });
+
+  it('honours an overridden endpoint and model, so both are configuration', () => {
     expect(
-      resolveAgentRouterConfiguration({
-        AGENTROUTER_API_KEY: ` ${API_KEY} `,
-        AGENTROUTER_BASE_URL: ' https://agentrouter.internal.example/v1 ',
-        AGENTROUTER_MODEL: ' deepseek-v4 ',
+      resolveOpenRouterConfiguration({
+        OPENROUTER_API_KEY: ` ${API_KEY} `,
+        OPENROUTER_BASE_URL: ' https://openrouter.internal.example/api/v1 ',
+        OPENROUTER_MODEL: ' some/other-model ',
       }),
     ).toEqual({
-      baseUrl: 'https://agentrouter.internal.example/v1',
+      baseUrl: 'https://openrouter.internal.example/api/v1',
       apiKey: API_KEY,
-      modelId: 'deepseek-v4',
+      modelId: 'some/other-model',
     });
   });
 
@@ -259,7 +307,10 @@ describe('AgentRouter configuration', () => {
     (apiKey) => {
       const error = (() => {
         try {
-          return resolveAgentRouterConfiguration({ AGENTROUTER_API_KEY: apiKey });
+          return resolveOpenRouterConfiguration({
+            OPENROUTER_API_KEY: apiKey,
+            OPENROUTER_MODEL: OPENROUTER_MODEL,
+          });
         } catch (thrown: unknown) {
           return thrown;
         }
@@ -268,31 +319,52 @@ describe('AgentRouter configuration', () => {
       expect(error).toBeInstanceOf(AgentProviderError);
       expect((error as AgentProviderError).code).toBe('missing_configuration');
       expect((error as AgentProviderError).message).toBe(
-        AGENTROUTER_SAFE_MESSAGES.missing_configuration,
+        OPENROUTER_SAFE_MESSAGES.missing_configuration,
       );
     },
   );
 
-  it('fails before touching the provider when AgentRouter is selected without a key', async () => {
-    mocks.env.AGENT_PROVIDER = 'agentrouter';
+  it.each([
+    ['no key', { OPENROUTER_MODEL: OPENROUTER_MODEL }],
+    ['no model', { OPENROUTER_API_KEY: API_KEY }],
+    ['neither', {}],
+  ])('fails before touching the provider when OpenRouter is selected with %s', async (_, env) => {
+    mocks.env.AGENT_PROVIDER = 'openrouter';
+    Object.assign(mocks.env, env);
     mocks.invokeResult = usageResult();
 
     const error = (await invoke().catch((thrown: unknown) => thrown)) as AgentProviderError;
 
     expect(error.code).toBe('missing_configuration');
-    expect(error.message).toBe(AGENTROUTER_SAFE_MESSAGES.missing_configuration);
+    expect(error.message).toBe(OPENROUTER_SAFE_MESSAGES.missing_configuration);
     expect(mocks.openAiConfigs).toHaveLength(0);
     expect(mocks.invocations).toHaveLength(0);
   });
 
-  it('does not require a Bedrock model ID to run AgentRouter', async () => {
-    configureAgentRouter();
+  it('does not require a Bedrock model ID to run OpenRouter', async () => {
+    configureOpenRouter();
     mocks.invokeResult = usageResult();
 
     const result = await invoke();
 
-    expect(result.metadata.provider).toBe(AGENTROUTER_STRANDS_PROVIDER);
+    expect(result.metadata.provider).toBe(OPENROUTER_STRANDS_PROVIDER);
     expect(mocks.bedrockConfigs).toHaveLength(0);
+  });
+
+  it('does not fall forward to OpenRouter when Bedrock is selected but unconfigured', async () => {
+    mocks.env.AGENT_PROVIDER = 'bedrock';
+    mocks.env.OPENROUTER_API_KEY = API_KEY;
+    mocks.env.OPENROUTER_MODEL = OPENROUTER_MODEL;
+    mocks.invokeResult = usageResult();
+
+    const error = (await invoke().catch((thrown: unknown) => thrown)) as AgentProviderError;
+
+    expect(error.code).toBe('missing_configuration');
+    expect(error.message).toBe(AGENT_PROVIDER_SAFE_MESSAGES.missing_configuration);
+    // The configured development provider was available and still not used.
+    expect(mocks.bedrockConfigs).toHaveLength(0);
+    expect(mocks.openAiConfigs).toHaveLength(0);
+    expect(mocks.invocations).toHaveLength(0);
   });
 });
 
@@ -314,9 +386,10 @@ describe('model construction per provider', () => {
     expect(result.metadata.provider).toBe(BEDROCK_STRANDS_PROVIDER);
   });
 
-  it('builds the Strands OpenAI-compatible client, and only it, for AgentRouter', async () => {
-    mocks.env.AGENT_PROVIDER = 'agentrouter';
-    mocks.env.AGENTROUTER_API_KEY = API_KEY;
+  it('builds the Strands OpenAI-compatible client, and only it, for OpenRouter', async () => {
+    mocks.env.AGENT_PROVIDER = 'openrouter';
+    mocks.env.OPENROUTER_API_KEY = API_KEY;
+    mocks.env.OPENROUTER_MODEL = OPENROUTER_MODEL;
     mocks.invokeResult = usageResult();
 
     const result = await invoke();
@@ -326,32 +399,33 @@ describe('model construction per provider', () => {
       // Chat Completions is the OpenAI-compatible surface that carries the
       // `tools` / `tool_calls` fields the tool loop depends on.
       api: 'chat',
-      modelId: 'deepseek-v4-flash',
+      modelId: OPENROUTER_MODEL,
+      // The credential reaches the model client on the server side only.
       apiKey: API_KEY,
-      clientConfig: { baseURL: 'https://agentrouter.org/v1' },
+      clientConfig: { baseURL: 'https://openrouter.ai/api/v1' },
       // The output bound goes out as `max_tokens`, the field an
       // OpenAI-compatible endpoint documents, not OpenAI's own
       // `max_completion_tokens` — which `maxTokens` would have produced.
       params: { max_tokens: AGENT_MAX_OUTPUT_TOKENS },
     });
     expect(mocks.openAiConfigs[0]?.maxTokens).toBeUndefined();
-    // Bedrock is not constructed at all when AgentRouter is selected.
+    // Bedrock is not constructed at all when OpenRouter is selected.
     expect(mocks.bedrockConfigs).toHaveLength(0);
-    expect(result.metadata.provider).toBe(AGENTROUTER_STRANDS_PROVIDER);
+    expect(result.metadata.provider).toBe(OPENROUTER_STRANDS_PROVIDER);
   });
 
   it('points the client at the configured endpoint and model', async () => {
-    configureAgentRouter({
-      AGENTROUTER_BASE_URL: 'https://agentrouter.internal.example/v1',
-      AGENTROUTER_MODEL: 'deepseek-v4',
+    configureOpenRouter({
+      OPENROUTER_BASE_URL: 'https://openrouter.internal.example/api/v1',
+      OPENROUTER_MODEL: 'some/other-model',
     });
     mocks.invokeResult = usageResult();
 
     await invoke();
 
     expect(mocks.openAiConfigs[0]).toMatchObject({
-      modelId: 'deepseek-v4',
-      clientConfig: { baseURL: 'https://agentrouter.internal.example/v1' },
+      modelId: 'some/other-model',
+      clientConfig: { baseURL: 'https://openrouter.internal.example/api/v1' },
     });
   });
 
@@ -360,21 +434,21 @@ describe('model construction per provider', () => {
     mocks.invokeResult = usageResult();
     await invoke({ tools: stubTools, maxTurns: 5 });
 
-    configureAgentRouter();
+    configureOpenRouter();
     await invoke({ tools: stubTools, maxTurns: 5 });
 
     expect(mocks.agentConfigs).toHaveLength(2);
-    const [bedrockAgent, agentRouterAgent] = mocks.agentConfigs;
+    const [bedrockAgent, openRouterAgent] = mocks.agentConfigs;
     // Provider choice cannot bypass validation: the model sees exactly the
     // caller-supplied allow-listed toolbox, sequentially, under the same bounds.
-    for (const config of [bedrockAgent, agentRouterAgent]) {
+    for (const config of [bedrockAgent, openRouterAgent]) {
       expect(config).toMatchObject({
         tools: stubTools,
         printer: false,
         toolExecutor: 'sequential',
       });
     }
-    expect(agentRouterAgent?.systemPrompt).toBe(bedrockAgent?.systemPrompt);
+    expect(openRouterAgent?.systemPrompt).toBe(bedrockAgent?.systemPrompt);
     expect(mocks.invocations.map((call) => call.options.limits)).toEqual([
       { turns: 5 },
       { turns: 5 },
@@ -389,36 +463,36 @@ describe('model construction per provider', () => {
     mocks.invokeResult = usageResult();
     const bedrock = await invoke();
 
-    configureAgentRouter();
+    configureOpenRouter();
     mocks.invokeResult = usageResult();
-    const agentRouter = await invoke();
+    const openRouter = await invoke();
 
-    expect(agentRouter.toolCallCount).toBe(bedrock.toolCallCount);
-    expect(agentRouter.acceptedToolCount).toBe(bedrock.acceptedToolCount);
-    expect(agentRouter.stopReason).toBe(bedrock.stopReason);
+    expect(openRouter.toolCallCount).toBe(bedrock.toolCallCount);
+    expect(openRouter.acceptedToolCount).toBe(bedrock.acceptedToolCount);
+    expect(openRouter.stopReason).toBe(bedrock.stopReason);
     // Everything but the provider label and wall-clock latency is identical.
     const { latencyMs: _bedrockLatency, ...bedrockMetadata } = bedrock.metadata;
-    const { latencyMs: _agentRouterLatency, ...agentRouterMetadata } = agentRouter.metadata;
-    expect(agentRouterMetadata).toEqual({
+    const { latencyMs: _openRouterLatency, ...openRouterMetadata } = openRouter.metadata;
+    expect(openRouterMetadata).toEqual({
       ...bedrockMetadata,
-      provider: AGENTROUTER_STRANDS_PROVIDER,
+      provider: OPENROUTER_STRANDS_PROVIDER,
     });
   });
 
-  it('treats a cancelled AgentRouter invocation as a timeout, not a crash', async () => {
-    configureAgentRouter();
+  it('treats a cancelled OpenRouter invocation as a timeout, not a crash', async () => {
+    configureOpenRouter();
     mocks.invokeResult = { stopReason: 'cancelled' };
 
     const error = (await invoke().catch((thrown: unknown) => thrown)) as AgentProviderError;
 
     expect(error.code).toBe('timeout');
-    expect(error.message).toBe(AGENTROUTER_SAFE_MESSAGES.timeout);
+    expect(error.message).toBe(OPENROUTER_SAFE_MESSAGES.timeout);
   });
 });
 
-describe('AgentRouter credential containment', () => {
+describe('OpenRouter credential containment', () => {
   it('returns metadata that carries no credential or request body', async () => {
-    configureAgentRouter();
+    configureOpenRouter();
     mocks.invokeResult = usageResult();
 
     const result = await invoke();
@@ -446,20 +520,21 @@ describe('AgentRouter credential containment', () => {
     ['APIConnectionTimeoutError', 'timeout'],
     ['APIUserAbortError', 'timeout'],
     ['APIError', 'provider_error'],
-  ])('maps an AgentRouter %s to %s with AgentRouter-worded safe text', (name, expected) => {
-    mocks.env.AGENT_PROVIDER = 'agentrouter';
-    mocks.env.AGENTROUTER_API_KEY = API_KEY;
+  ])('maps an OpenRouter %s to %s with OpenRouter-worded safe text', (name, expected) => {
+    mocks.env.AGENT_PROVIDER = 'openrouter';
+    mocks.env.OPENROUTER_API_KEY = API_KEY;
+    mocks.env.OPENROUTER_MODEL = OPENROUTER_MODEL;
 
-    const error = toAgentProviderError(providerError(name), 'agentrouter');
+    const error = toAgentProviderError(providerError(name), 'openrouter');
 
     expect(error.code).toBe(expected);
-    expect(error.message).toBe(`${AGENTROUTER_SAFE_MESSAGES[expected as never]} [${name}]`);
-    // AgentRouter failures are described in AgentRouter's terms, not AWS's.
+    expect(error.message).toBe(`${OPENROUTER_SAFE_MESSAGES[expected as never]} [${name}]`);
+    // OpenRouter failures are described in OpenRouter's terms, not AWS's.
     expect(error.message).not.toBe(AGENT_PROVIDER_SAFE_MESSAGES[expected as never]);
   });
 
-  it('classifies an AgentRouter failure wrapped by the SDK without leaking the key', async () => {
-    configureAgentRouter();
+  it('classifies an OpenRouter failure wrapped by the SDK without leaking the key', async () => {
+    configureOpenRouter();
     // Strands wraps every model error in its own ModelError with the provider
     // error as the cause, so the taxonomy has to be read off the cause chain.
     const inner = providerError(
@@ -474,7 +549,7 @@ describe('AgentRouter credential containment', () => {
 
     expect(error.code).toBe('missing_credentials');
     expect(error.message).toBe(
-      `${AGENTROUTER_SAFE_MESSAGES.missing_credentials} [AuthenticationError]`,
+      `${OPENROUTER_SAFE_MESSAGES.missing_credentials} [AuthenticationError]`,
     );
     expect(error.message).not.toContain(API_KEY);
     expect(error.message).not.toContain('Bearer');
@@ -483,7 +558,7 @@ describe('AgentRouter credential containment', () => {
   });
 
   it('keeps the AWS error taxonomy intact for the Bedrock provider', () => {
-    // The AgentRouter additions must not reclassify any AWS failure.
+    // The OpenRouter additions must not reclassify any AWS failure.
     expect(toAgentProviderError(providerError('AccessDeniedException'), 'bedrock').message).toBe(
       `${AGENT_PROVIDER_SAFE_MESSAGES.access_denied} [AccessDeniedException]`,
     );
@@ -492,70 +567,67 @@ describe('AgentRouter credential containment', () => {
     );
     // And an unreadable name never reaches the message.
     expect(
-      toAgentProviderError(providerError('Invalid body {"k":"v"}'), 'agentrouter').message,
-    ).toBe(AGENTROUTER_SAFE_MESSAGES.provider_error);
+      toAgentProviderError(providerError('Invalid body {"k":"v"}'), 'openrouter').message,
+    ).toBe(OPENROUTER_SAFE_MESSAGES.provider_error);
   });
 });
 
-describe('AgentRouter error classification against the real OpenAI SDK classes', () => {
+describe('OpenRouter error classification against the real OpenAI SDK classes', () => {
   // The OpenAI SDK sets no `name` on any of its error classes, so a classifier
-  // that reads only `.name` reports every AgentRouter failure as a generic
+  // that reads only `.name` reports every OpenRouter failure as a generic
   // provider error. These cases use the SDK's own error objects rather than
   // hand-made names, because hand-made names cannot catch that.
   //
-  // `liveUnauthorizedBody` is the body the live https://agentrouter.org/v1
-  // endpoint actually returned to an unauthenticated request.
-  const liveUnauthorizedBody = {
+  // The body is a representative OpenRouter-shaped error envelope. It is a
+  // fixture, not a captured live response: no live OpenRouter call is made by
+  // this suite.
+  const unauthorizedBody = {
     error: {
-      message:
-        'unauthorized client detected, contact support for assistance at https://discord.gg/HgekCyHJqB',
+      message: 'No auth credentials found',
+      code: 401,
     },
-    message: 'UNAUTHENTICATED',
-    success: false,
-    type: 'unauthorized_client_error',
   };
 
-  function apiError(status: number, body: object = liveUnauthorizedBody) {
+  function apiError(status: number, body: object = unauthorizedBody) {
     return OpenAI.APIError.generate(status, body, undefined, new Headers());
   }
 
   it.each([
     [401, 'missing_credentials'],
+    [402, 'access_denied'],
     [403, 'access_denied'],
     [404, 'access_denied'],
     [408, 'timeout'],
     [429, 'throttled'],
     [504, 'timeout'],
   ])('maps a real HTTP %i failure to %s', (status, expected) => {
-    const error = toAgentProviderError(apiError(status), 'agentrouter');
+    const error = toAgentProviderError(apiError(status), 'openrouter');
 
     expect(error.code).toBe(expected);
-    expect(error.message).toBe(`${AGENTROUTER_SAFE_MESSAGES[expected as never]} [HTTP ${status}]`);
+    expect(error.message).toBe(`${OPENROUTER_SAFE_MESSAGES[expected as never]} [HTTP ${status}]`);
   });
 
-  it.each([400, 500, 503])(
+  it.each([400, 500, 502, 503])(
     'keeps HTTP %i a provider error rather than over-claiming a cause',
     (status) => {
-      expect(toAgentProviderError(apiError(status), 'agentrouter').code).toBe('provider_error');
+      expect(toAgentProviderError(apiError(status), 'openrouter').code).toBe('provider_error');
     },
   );
 
   it('maps a connection timeout and a caller cancellation to timeout', () => {
-    expect(toAgentProviderError(new OpenAI.APIConnectionTimeoutError(), 'agentrouter').code).toBe(
+    expect(toAgentProviderError(new OpenAI.APIConnectionTimeoutError(), 'openrouter').code).toBe(
       'timeout',
     );
-    expect(toAgentProviderError(new OpenAI.APIUserAbortError(), 'agentrouter').code).toBe(
-      'timeout',
-    );
+    expect(toAgentProviderError(new OpenAI.APIUserAbortError(), 'openrouter').code).toBe('timeout');
   });
 
-  it('classifies an AgentRouter failure the SDK wrapped, as Strands always does', () => {
+  it('classifies an OpenRouter failure the SDK wrapped, as Strands always does', () => {
     // Strands wraps every model failure in its own ModelError with the provider
     // error as `cause`, so classification has to walk the chain.
     const wrapped = new Error('ModelError', { cause: apiError(429) });
 
     expect(classifyProviderError(wrapped).code).toBe('throttled');
-    expect(toAgentProviderError(wrapped, 'agentrouter').code).toBe('throttled');
+    expect(toAgentProviderError(wrapped, 'openrouter').code).toBe('throttled');
   });
 
   it('never echoes a body-derived field, which the provider controls', () => {
@@ -568,9 +640,9 @@ describe('AgentRouter error classification against the real OpenAI SDK classes',
       code: 'sk-live-abcdef0123456789',
     });
 
-    const error = toAgentProviderError(leaky, 'agentrouter');
+    const error = toAgentProviderError(leaky, 'openrouter');
 
-    expect(error.message).toBe(`${AGENTROUTER_SAFE_MESSAGES.missing_credentials} [HTTP 401]`);
+    expect(error.message).toBe(`${OPENROUTER_SAFE_MESSAGES.missing_credentials} [HTTP 401]`);
     expect(error.message).not.toContain('sk-live');
     expect(error.message).not.toContain('abcdef0123456789');
   });
@@ -580,8 +652,8 @@ describe('AgentRouter error classification against the real OpenAI SDK classes',
       code: 'provider_error',
       detail: undefined,
     });
-    expect(toAgentProviderError(new Error('leaky'), 'agentrouter').message).toBe(
-      AGENTROUTER_SAFE_MESSAGES.provider_error,
+    expect(toAgentProviderError(new Error('leaky'), 'openrouter').message).toBe(
+      OPENROUTER_SAFE_MESSAGES.provider_error,
     );
   });
 });

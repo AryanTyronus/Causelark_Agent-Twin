@@ -1,7 +1,7 @@
 // @vitest-environment node
 // @polsia:user-owned — static guard on the Agent Twin provider boundary.
 //
-// Two model providers are selectable (Bedrock for AWS, AgentRouter for local
+// Two model providers are selectable (Bedrock for AWS, OpenRouter for local
 // development), and both are Strands model clients. This guard holds that line
 // from the outside: the agent path may construct exactly those two clients, may
 // reach no third provider — in particular not the raw `openai` package nor the
@@ -54,14 +54,16 @@ describe('agent path provider boundary', () => {
     '$name reaches no provider outside the Strands model clients',
     ({ source }) => {
       // The raw `openai` package and the Polsia OpenAI-compatible proxy are both
-      // off limits: the AgentRouter development provider is reachable only
+      // off limits: the OpenRouter development provider is reachable only
       // through Strands' own OpenAI-compatible adapter, so the agent loop keeps
       // running inside Strands' tool-calling machinery either way.
       expect(source).not.toMatch(/from\s+['"]openai['"]/);
       expect(source).not.toMatch(/require\(\s*['"]openai['"]\s*\)/);
       expect(source).not.toMatch(/POLSIA_/);
       expect(source).not.toMatch(/polsia[-_]?ai/i);
-      expect(source).not.toMatch(/co\.agentrouter\.org/);
+      // AgentRouter was replaced by OpenRouter. No part of the agent path may
+      // still reach for it, including through a stale base URL.
+      expect(source).not.toMatch(/agentrouter/i);
       // Every import specifier in the agent path: the Strands adapter is the
       // only OpenAI-flavoured module that may be imported, so no other
       // OpenAI-compatible client can enter through a dependency.
@@ -138,22 +140,30 @@ describe('selectable model providers', () => {
     expect(resolver).not.toMatch(/claude|anthropic|amazon|nova|titan|llama|mistral|cohere/i);
   });
 
-  it('takes the AgentRouter endpoint, credential and model from configuration', () => {
+  it('takes the OpenRouter endpoint, credential and model from configuration', () => {
     const resolver = segment(
       provider,
-      'export function resolveAgentRouterConfiguration',
+      'export function resolveOpenRouterConfiguration',
       'export function',
     );
 
-    expect(resolver).toMatch(/source\.AGENTROUTER_BASE_URL/);
-    expect(resolver).toMatch(/source\.AGENTROUTER_API_KEY/);
-    expect(resolver).toMatch(/source\.AGENTROUTER_MODEL/);
-    // The endpoint is the only permitted AgentRouter host literal in the agent
-    // path, and it is the current origin rather than the retired one.
+    expect(resolver).toMatch(/source\.OPENROUTER_BASE_URL/);
+    expect(resolver).toMatch(/source\.OPENROUTER_API_KEY/);
+    expect(resolver).toMatch(/source\.OPENROUTER_MODEL/);
+    // The endpoint is the only permitted provider host literal in the agent
+    // path, and it is the OpenAI-compatible base of the current provider.
     const hosts = [...provider.matchAll(/https?:\/\/([^'"\s]+)/g)].map((match) => match[1]);
-    expect(hosts).toEqual(['agentrouter.org/v1']);
-    // An unset key must fail rather than dispatch an unauthenticated request.
-    expect(resolver).toMatch(/if\s*\(!apiKey\)/);
+    expect(hosts).toEqual(['openrouter.ai/api/v1']);
+    // An unset key or model must fail rather than dispatch an unauthenticated
+    // request, or run a model the operator never chose.
+    expect(resolver).toMatch(/if\s*\(!apiKey\s*\|\|\s*!modelId\)/);
+  });
+
+  it('carries no trace of the provider OpenRouter replaced', () => {
+    // A stale AgentRouter reference anywhere on the boundary — a variable, a
+    // default endpoint, a safe message — would be a development provider the
+    // operator cannot select and cannot see failing.
+    expect(provider).not.toMatch(/agentrouter/i);
   });
 
   it('passes each provider its own configuration and nothing else', () => {

@@ -41,12 +41,12 @@ export const env = createEnv({
     // explicit: an unrecognised value fails the turn rather than silently
     // switching providers. Unset defaults to `bedrock`, the intended AWS
     // provider, so existing deployments keep their behaviour.
-    AGENT_PROVIDER: z.enum(['bedrock', 'agentrouter']).optional(),
-    // AgentRouter is the development provider (OpenAI-compatible). These are
+    AGENT_PROVIDER: z.enum(['bedrock', 'openrouter']).optional(),
+    // OpenRouter is the development provider (OpenAI-compatible). These are
     // server-side only — the API key is never bundled into client code.
-    AGENTROUTER_BASE_URL: z.string().url().optional(),
-    AGENTROUTER_API_KEY: z.string().min(1).optional(),
-    AGENTROUTER_MODEL: z.string().min(1).optional(),
+    OPENROUTER_BASE_URL: z.string().url().optional(),
+    OPENROUTER_API_KEY: z.string().min(1).optional(),
+    OPENROUTER_MODEL: z.string().min(1).optional(),
     // @polsia:contrib agent-twin-provider end
     // @polsia:slot env_vars_server end
   },
@@ -84,9 +84,9 @@ export const env = createEnv({
     AWS_REGION: process.env.AWS_REGION,
     // @polsia:contrib agent-twin-provider start
     AGENT_PROVIDER: process.env.AGENT_PROVIDER,
-    AGENTROUTER_BASE_URL: process.env.AGENTROUTER_BASE_URL,
-    AGENTROUTER_API_KEY: process.env.AGENTROUTER_API_KEY,
-    AGENTROUTER_MODEL: process.env.AGENTROUTER_MODEL,
+    OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    OPENROUTER_MODEL: process.env.OPENROUTER_MODEL,
     // @polsia:contrib agent-twin-provider end
     // @polsia:slot env_runtime end
   },

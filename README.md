@@ -6,7 +6,7 @@ Agent Twin places a real autonomous agent inside a simulated operational environ
 
 The environment itself is deterministic. Given the same seed and the same sequence of actions, the simulated world transitions to exactly the same state, every time. That property is what makes the trace replayable and the agent's decisions auditable: the environment is reproducible, so any difference between two runs is attributable to the agent, not to the world it ran in. The model's decisions are not deterministic and are not claimed to be — the contract distinguishes the two explicitly, marking the transition engine `deterministic` and the provider decision path `variable`.
 
-Agent Twin is built on the Strands Agents TypeScript SDK, with model providers behind a single abstraction boundary. Amazon Bedrock is the intended production provider; AgentRouter is a development provider that lets the agent loop run locally before AWS credentials exist. Both drive the same agent loop, the same allow-listed tools, and the same validation, persistence, metrics and replay path — only the model client differs.
+Agent Twin is built on the Strands Agents TypeScript SDK, with model providers behind a single abstraction boundary. Amazon Bedrock is the intended production provider; OpenRouter is a development provider that lets the agent loop run locally before AWS credentials exist, and lets a different model be exercised without changing the agent runtime. Both drive the same agent loop, the same allow-listed tools, and the same validation, persistence, metrics and replay path — only the model client differs.
 
 ## Why Agent Twin?
 
@@ -66,11 +66,31 @@ Model providers sit behind one abstraction boundary, `src/lib/agent/provider.ts`
 | Provider | `AGENT_PROVIDER` | Model client | Intended use |
 | --- | --- | --- | --- |
 | Amazon Bedrock | `bedrock` (default) | Strands `BedrockModel`, driving the Bedrock Converse API | Production, and the AWS/hackathon deployment |
-| AgentRouter | `agentrouter` | Strands' OpenAI-compatible `OpenAIModel`, Chat Completions mode | Development and testing only |
+| OpenRouter | `openrouter` | Strands' OpenAI-compatible `OpenAIModel`, Chat Completions mode | Development and testing only |
 
-Provider selection is explicit and **never falls back**. An unrecognised `AGENT_PROVIDER` fails the turn with a visible configuration error rather than quietly running — and billing — the other provider. Unset selects Bedrock, so an existing deployment is unaffected.
+Provider selection is explicit and **never falls back**. An unrecognised `AGENT_PROVIDER` fails the turn with a visible configuration error rather than quietly running — and billing — the other provider. Unset selects Bedrock, so an existing deployment is unaffected. The same applies in the other direction: `AGENT_PROVIDER=bedrock` with an incomplete Bedrock configuration fails rather than falling forward to OpenRouter.
 
-Credentials are never read from application env vars for Bedrock and never stored in this repository; the AWS SDK resolves them through its standard credential provider chain. Provider failures are classified into stable codes — `missing_configuration`, `missing_credentials`, `access_denied`, `throttled`, `timeout`, `provider_error` — by walking the error cause chain, so a failure is recorded as a categorised event rather than an opaque string. Raw provider responses, request bodies, authorization headers, and API keys are never persisted.
+Provider failures are classified into stable codes — `missing_configuration`, `missing_credentials`, `access_denied`, `throttled`, `timeout`, `provider_error` — by walking the error cause chain, so a failure is recorded as a categorised event rather than an opaque string. Raw provider responses, request bodies, authorization headers, and API keys are never persisted.
+
+### Amazon Bedrock (default)
+
+The AWS-native path, and the intended hackathon deployment. It uses the Strands `BedrockModel`, which drives the Amazon Bedrock Converse API through `@aws-sdk/client-bedrock-runtime`.
+
+Both the model and the region are configuration rather than code, and there is no silent default model: `BEDROCK_MODEL_ID` is required, and an unset value fails the turn with `missing_configuration` rather than running a billed model the operator never chose. `BEDROCK_REGION` falls back to `AWS_REGION`, and then to the AWS SDK's own region resolution.
+
+Credentials are never read from application env vars and never stored in this repository. The AWS SDK resolves them through its standard credential provider chain — environment, shared `~/.aws/credentials` and `~/.aws/config` profiles, SSO, container and instance metadata, web identity. The identity needs `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` on the chosen model, plus model access granted in the Bedrock console for the region.
+
+### OpenRouter (development)
+
+The development path: an OpenAI-compatible endpoint reached through the Strands SDK's own OpenAI-compatible adapter rather than a parallel agent architecture, so the agent keeps genuine tool calling — it observes resources, decides, requests an action, has that action validated against the simulation, observes the changed state, and continues, exactly as under Bedrock. OpenRouter also makes it possible to exercise a different model without changing the Agent Twin runtime at all.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `OPENROUTER_API_KEY` | yes | Server-side credential. There is no anonymous mode |
+| `OPENROUTER_MODEL` | yes | Any model ID the account can reach. There is deliberately no default — OpenRouter fronts a large, changing catalogue, and an unchosen model must fail rather than silently run |
+| `OPENROUTER_BASE_URL` | no | Defaults to `https://openrouter.ai/api/v1`; the client appends `/chat/completions` |
+
+The API key is server-only. It is passed to the model client and is never sent to the browser, persisted with a turn, or written to a log.
 
 ## Bounded Agent Loop
 
@@ -118,7 +138,7 @@ Strands Agents
  ↓
 Provider abstraction
  ├── BedrockModel → Amazon Bedrock
- └── AgentRouter → DeepSeek V4 Flash
+ └── OpenAIModel → OpenRouter
  ↓
 Simulation tools
  ↓
@@ -138,7 +158,7 @@ The dashboard at `/dashboard/simulations` starts runs; `/dashboard/simulations/<
 | Layer | Technology |
 | --- | --- |
 | Agent framework | Strands Agents TypeScript SDK 1.17 |
-| Model providers | Amazon Bedrock (Converse API) · AgentRouter (OpenAI-compatible) |
+| Model providers | Amazon Bedrock (Converse API) · OpenRouter (OpenAI-compatible) |
 | Application | Next.js 16.2 (App Router, Turbopack), React 19.2 |
 | Language | TypeScript 5.5, strict, `noUncheckedIndexedAccess` |
 | Contracts | Zod 4 |
@@ -193,32 +213,34 @@ See `.env.example` for the authoritative list; only placeholders are committed t
 | `BETTER_AUTH_URL` | yes | Auth base URL |
 | `NEXT_PUBLIC_APP_URL` | yes | Public application origin |
 | `NODE_ENV` | yes | Runtime environment |
-| `AGENT_PROVIDER` | no | `bedrock` (default) or `agentrouter`. Unrecognised values fail the turn rather than falling back |
+| `AGENT_PROVIDER` | no | `bedrock` (default) or `openrouter`. Unrecognised values fail the turn rather than falling back |
 | `BEDROCK_MODEL_ID` | for Bedrock | Bedrock model or inference-profile identifier. There is no silent default: unset fails the turn with `missing_configuration` rather than running a billed model |
 | `BEDROCK_REGION` | no | Bedrock region; falls back to `AWS_REGION`. AWS credentials come from the SDK's standard credential chain, not from env vars |
-| `AGENTROUTER_API_KEY` | for AgentRouter | Development provider credential |
-| `AGENTROUTER_BASE_URL` | no | Defaults to `https://agentrouter.org/v1` |
-| `AGENTROUTER_MODEL` | no | Defaults to `deepseek-v4-flash` |
+| `OPENROUTER_API_KEY` | for OpenRouter | Development provider credential. Server-side only |
+| `OPENROUTER_MODEL` | for OpenRouter | Model ID to run. No default: unset fails the turn with `missing_configuration` |
+| `OPENROUTER_BASE_URL` | no | Defaults to `https://openrouter.ai/api/v1` |
 | `NEXT_PUBLIC_API_URL` | no | External API origin; unset means same-origin `/api` |
 
 `.env.local` is gitignored. Never commit real credentials.
 
 ## Testing
 
-The normal test suite requires no provider credentials — provider interactions are tested against fakes, so it runs offline and deterministically.
+Verification splits into two categories, and only the first is claimed here.
+
+**Deterministic / unit verification.** The normal test suite requires no provider credentials — both model clients are replaced at the provider boundary, so the suite runs offline, deterministically, and in CI without secrets. It covers provider selection, model construction, configuration failures, credential containment, error classification, and the bounded loop.
 
 Latest local verification, on the current working tree:
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Tests | `npm run test` | 243 tests passing (15 test files) |
+| Tests | `npm run test` | 253 tests passing (15 test files) |
 | Lint | `npm run lint` | Passing (147 files checked) |
 | Build | `SKIP_ENV_VALIDATION=1 npm run build` | Passing |
 | Typecheck | `npm run typecheck` | Passing |
 
 Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, and the client/server contracts. Migration deployment was verified separately against a fresh disposable PostgreSQL database: all three migrations apply, including the simulation tables, with no schema drift.
 
-No real provider execution is claimed by these numbers. See Project Status.
+**Live provider verification.** Neither provider has been exercised against a live endpoint, and nothing above should be read as claiming otherwise. A live OpenRouter or Bedrock run is a separate boundary requiring its own credential, and it is not part of this suite. See Project Status.
 
 ## Project Status
 
@@ -233,15 +255,15 @@ No real provider execution is claimed by these numbers. See Project Status.
 - Replay reconstruction and a rerun determinism check
 - Dashboard run starter and run inspector
 - Provider error classification, with no credential or raw-response persistence
-- Local verification gates green: 243 tests, lint, production build, typecheck
+- Local verification gates green: 253 tests, lint, production build, typecheck
 - Migration deployment verified against a fresh disposable PostgreSQL database
 
 ### Pending external verification
 
 - **Real Amazon Bedrock E2E execution is currently pending AWS/Bedrock credentials.**
-- **Real AgentRouter E2E execution is currently pending account/client authorization.**
+- **Real OpenRouter E2E execution is currently pending a live account and API credential.**
 
-Neither provider has been exercised end-to-end against a live endpoint. The provider path is implemented and unit-tested against fakes, and failures are classified and persisted safely, but no live model has driven a real run in this repository. The default Bedrock provider fails visibly with `missing_configuration` when `BEDROCK_MODEL_ID` is unset, rather than silently substituting a model.
+Neither provider has been exercised end-to-end against a live endpoint. The provider path is implemented and unit-tested against fakes, and failures are classified and persisted safely, but no live model has driven a real run in this repository. Both providers fail visibly with `missing_configuration` when their model is unset, rather than silently substituting one.
 
 ### Future direction
 

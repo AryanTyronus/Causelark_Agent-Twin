@@ -3,13 +3,14 @@
 // Agent Twin execution runs on the official Strands Agents TypeScript SDK. Two
 // model providers are selectable, explicitly, through `AGENT_PROVIDER`:
 //
-//   bedrock     (default) — `BedrockModel` drives the Amazon Bedrock Converse
-//                API through `@aws-sdk/client-bedrock-runtime`. This is the
-//                intended production/hackathon provider.
-//   agentrouter — `OpenAIModel` (Strands' native OpenAI-compatible adapter) in
-//                Chat Completions mode points at AgentRouter. This is a
-//                DEVELOPMENT provider, so the Agent Twin can run locally
-//                before AWS credentials exist.
+//   bedrock    (default) — `BedrockModel` drives the Amazon Bedrock Converse
+//               API through `@aws-sdk/client-bedrock-runtime`. This is the
+//               intended production/hackathon provider.
+//   openrouter — `OpenAIModel` (Strands' native OpenAI-compatible adapter) in
+//               Chat Completions mode points at OpenRouter's OpenAI-compatible
+//               endpoint. This is a DEVELOPMENT provider, so the Agent Twin can
+//               run locally before AWS credentials exist, and so a different
+//               model can be exercised without changing the agent runtime.
 //
 // Both providers drive the same bounded Strands `Agent` over the same
 // allow-listed simulation tools, so tool calling, validation, persistence,
@@ -19,7 +20,7 @@
 // AWS credentials are never read from application env vars; the AWS SDK resolves
 // them through its standard credential provider chain (environment, shared
 // config/credentials files, SSO, container/instance metadata, web identity).
-// The AgentRouter API key is read from server-only env and never leaves this
+// The OpenRouter API key is read from server-only env and never leaves this
 // module: it is passed to the model client and is not part of any persisted or
 // returned value.
 //
@@ -38,10 +39,10 @@ import { env } from '@/lib/env';
 /** Provider label persisted with every turn and surfaced in the run inspector. */
 export const BEDROCK_STRANDS_PROVIDER = 'Amazon Bedrock · Strands Agents SDK';
 /** Development-provider label, persisted the same way so a run is never ambiguous. */
-export const AGENTROUTER_STRANDS_PROVIDER = 'AgentRouter (development) · Strands Agents SDK';
+export const OPENROUTER_STRANDS_PROVIDER = 'OpenRouter (development) · Strands Agents SDK';
 
 /** The providers the Agent Twin can be pointed at. */
-export type AgentProviderKind = 'bedrock' | 'agentrouter';
+export type AgentProviderKind = 'bedrock' | 'openrouter';
 
 /**
  * Provider used when `AGENT_PROVIDER` is unset. Bedrock is the intended
@@ -50,10 +51,17 @@ export type AgentProviderKind = 'bedrock' | 'agentrouter';
  */
 export const DEFAULT_AGENT_PROVIDER: AgentProviderKind = 'bedrock';
 
-/** AgentRouter's OpenAI-compatible base; the client appends `/chat/completions`. */
-export const DEFAULT_AGENTROUTER_BASE_URL = 'https://agentrouter.org/v1';
-/** Development model served through AgentRouter. */
-export const DEFAULT_AGENTROUTER_MODEL = 'deepseek-v4-flash';
+/**
+ * OpenRouter's OpenAI-compatible base; the client appends `/chat/completions`.
+ * A fixed public endpoint, so it is the one provider value with a default.
+ */
+export const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+
+// There is deliberately no default OpenRouter model. OpenRouter fronts a large,
+// changing catalogue, so a baked-in default would silently run — and bill
+// against — a model the operator never chose, and would go stale as the
+// catalogue moves. `OPENROUTER_MODEL` is required instead; see
+// `resolveOpenRouterConfiguration`.
 
 /** Output budget for a single model call. */
 export const AGENT_MAX_OUTPUT_TOKENS = 1024;
@@ -90,24 +98,24 @@ export const AGENT_PROVIDER_SAFE_MESSAGES: Record<AgentProviderErrorCode, string
 };
 
 /**
- * Safe text for AgentRouter failures. The Bedrock record above is worded for
+ * Safe text for OpenRouter failures. The Bedrock record above is worded for
  * AWS, so the development provider carries its own: an operator reading a
  * failure should be told which provider and which variable to look at.
  */
-export const AGENTROUTER_SAFE_MESSAGES: Record<AgentProviderErrorCode, string> = {
+export const OPENROUTER_SAFE_MESSAGES: Record<AgentProviderErrorCode, string> = {
   missing_configuration:
-    'AgentRouter is selected but not configured. Set AGENTROUTER_API_KEY (and optionally AGENTROUTER_BASE_URL and AGENTROUTER_MODEL) for this environment.',
-  missing_credentials: 'AgentRouter rejected the configured API key. Check AGENTROUTER_API_KEY.',
+    'OpenRouter is selected but not configured. Set OPENROUTER_API_KEY and OPENROUTER_MODEL (and optionally OPENROUTER_BASE_URL) for this environment.',
+  missing_credentials: 'OpenRouter rejected the configured API key. Check OPENROUTER_API_KEY.',
   access_denied:
-    'AgentRouter denied access to the configured model. Check AGENTROUTER_MODEL and the account entitlements for it.',
-  throttled: 'AgentRouter throttled the request. Retry the turn.',
-  timeout: 'AgentRouter did not answer within the configured turn timeout.',
-  provider_error: 'The AgentRouter provider returned an error.',
+    'OpenRouter denied access to the configured model. Check OPENROUTER_MODEL and the account entitlements for it.',
+  throttled: 'OpenRouter throttled the request. Retry the turn.',
+  timeout: 'OpenRouter did not answer within the configured turn timeout.',
+  provider_error: 'The OpenRouter provider returned an error.',
 };
 
 /** Safe text for an unreadable `AGENT_PROVIDER` value. */
 export const AGENT_PROVIDER_SELECTION_MESSAGE =
-  'AGENT_PROVIDER is not a recognised provider. Use "bedrock" or "agentrouter".';
+  'AGENT_PROVIDER is not a recognised provider. Use "bedrock" or "openrouter".';
 
 export class AgentProviderError extends Error {
   readonly code: AgentProviderErrorCode;
@@ -162,14 +170,14 @@ export function resolveBedrockConfiguration(
   };
 }
 
-/** The AgentRouter-facing environment: server-only credentials plus endpoint config. */
-export interface AgentRouterEnvironment {
-  AGENTROUTER_BASE_URL?: string | undefined;
-  AGENTROUTER_API_KEY?: string | undefined;
-  AGENTROUTER_MODEL?: string | undefined;
+/** The OpenRouter-facing environment: server-only credentials plus endpoint config. */
+export interface OpenRouterEnvironment {
+  OPENROUTER_BASE_URL?: string | undefined;
+  OPENROUTER_API_KEY?: string | undefined;
+  OPENROUTER_MODEL?: string | undefined;
 }
 
-export interface AgentRouterConfiguration {
+export interface OpenRouterConfiguration {
   /** OpenAI-compatible base URL; the SDK client appends `/chat/completions`. */
   baseUrl: string;
   /** Server-only credential. Never persisted, logged, or returned. */
@@ -178,31 +186,35 @@ export interface AgentRouterConfiguration {
 }
 
 /**
- * Resolves the AgentRouter endpoint, credential and model.
+ * Resolves the OpenRouter endpoint, credential and model.
  *
  * The endpoint is configuration rather than a literal so an operator can point
- * at a different deployment, but it defaults to the current AgentRouter origin.
- * A missing API key is a configuration failure: there is no anonymous mode, so
- * the turn fails visibly instead of dispatching an unauthenticated request.
+ * at a different deployment, but it defaults to OpenRouter's public
+ * OpenAI-compatible base. A missing API key is a configuration failure: there is
+ * no anonymous mode, so the turn fails visibly instead of dispatching an
+ * unauthenticated request. A missing model is a configuration failure for the
+ * same reason — OpenRouter serves a large catalogue, and running an unchosen
+ * model is not a safe default.
  */
-export function resolveAgentRouterConfiguration(
-  source: AgentRouterEnvironment,
-): AgentRouterConfiguration {
-  const apiKey = trimmed(source.AGENTROUTER_API_KEY);
-  if (!apiKey)
+export function resolveOpenRouterConfiguration(
+  source: OpenRouterEnvironment,
+): OpenRouterConfiguration {
+  const apiKey = trimmed(source.OPENROUTER_API_KEY);
+  const modelId = trimmed(source.OPENROUTER_MODEL);
+  if (!apiKey || !modelId)
     throw new AgentProviderError(
       'missing_configuration',
-      AGENTROUTER_SAFE_MESSAGES.missing_configuration,
+      OPENROUTER_SAFE_MESSAGES.missing_configuration,
     );
   return {
-    baseUrl: trimmed(source.AGENTROUTER_BASE_URL) ?? DEFAULT_AGENTROUTER_BASE_URL,
+    baseUrl: trimmed(source.OPENROUTER_BASE_URL) ?? DEFAULT_OPENROUTER_BASE_URL,
     apiKey,
-    modelId: trimmed(source.AGENTROUTER_MODEL) ?? DEFAULT_AGENTROUTER_MODEL,
+    modelId,
   };
 }
 
 /** The full environment the provider resolves its selection and model from. */
-export interface AgentProviderEnvironment extends BedrockEnvironment, AgentRouterEnvironment {
+export interface AgentProviderEnvironment extends BedrockEnvironment, OpenRouterEnvironment {
   AGENT_PROVIDER?: string | undefined;
 }
 
@@ -216,13 +228,13 @@ export interface AgentProviderEnvironment extends BedrockEnvironment, AgentRoute
 export function resolveAgentProvider(source: AgentProviderEnvironment): AgentProviderKind {
   const requested = trimmed(source.AGENT_PROVIDER);
   if (!requested) return DEFAULT_AGENT_PROVIDER;
-  if (requested === 'bedrock' || requested === 'agentrouter') return requested;
+  if (requested === 'bedrock' || requested === 'openrouter') return requested;
   throw new AgentProviderError('missing_configuration', AGENT_PROVIDER_SELECTION_MESSAGE);
 }
 
 /** The persisted label for a resolved provider. */
 export function agentProviderLabel(provider: AgentProviderKind): string {
-  return provider === 'agentrouter' ? AGENTROUTER_STRANDS_PROVIDER : BEDROCK_STRANDS_PROVIDER;
+  return provider === 'openrouter' ? OPENROUTER_STRANDS_PROVIDER : BEDROCK_STRANDS_PROVIDER;
 }
 
 /**
@@ -233,7 +245,7 @@ export function agentProviderLabel(provider: AgentProviderKind): string {
  */
 export function selectedProviderLabel(source: AgentProviderEnvironment): string {
   return agentProviderLabel(
-    trimmed(source.AGENT_PROVIDER) === 'agentrouter' ? 'agentrouter' : DEFAULT_AGENT_PROVIDER,
+    trimmed(source.AGENT_PROVIDER) === 'openrouter' ? 'openrouter' : DEFAULT_AGENT_PROVIDER,
   );
 }
 
@@ -328,7 +340,7 @@ function identifierShaped(candidate: unknown): string | undefined {
  * The most specific safe name for a failure.
  *
  * AWS errors carry their name in `.name`. The OpenAI SDK, which backs the
- * AgentRouter provider, sets no `name` at all on any of its error classes — the
+ * OpenRouter provider, sets no `name` at all on any of its error classes — the
  * class identity lives on the constructor. Only SDK-side names are read: the
  * `code` and `type` fields on an OpenAI error are copied from the provider's
  * response body, so they are never echoed. The name is reported only when it is
@@ -362,9 +374,17 @@ function statusCode(error: unknown): number | undefined {
     : undefined;
 }
 
-/** HTTP status → normalized code, for providers that report the response status. */
+/**
+ * HTTP status → normalized code, for providers that report the response status.
+ *
+ * 402 is OpenRouter's "payment required" / insufficient-credits status, which an
+ * OpenAI-compatible client surfaces as a plain `APIError` with no useful class
+ * name; without this entry the most common free-tier failure would be reported
+ * as a generic provider error.
+ */
 const STATUS_ERROR_CODES: Record<number, AgentProviderErrorCode> = {
   401: 'missing_credentials',
+  402: 'access_denied',
   403: 'access_denied',
   404: 'access_denied',
   408: 'timeout',
@@ -452,9 +472,7 @@ export function safeProviderMessageFor(
   detail?: string,
 ): string {
   const base =
-    provider === 'agentrouter'
-      ? AGENTROUTER_SAFE_MESSAGES[code]
-      : AGENT_PROVIDER_SAFE_MESSAGES[code];
+    provider === 'openrouter' ? OPENROUTER_SAFE_MESSAGES[code] : AGENT_PROVIDER_SAFE_MESSAGES[code];
   return withDetail(base, detail);
 }
 
@@ -542,11 +560,11 @@ export function createAgentModel(
   provider: AgentProviderKind,
   source: AgentProviderEnvironment,
 ): AgentModelSelection {
-  if (provider === 'agentrouter') {
-    const configuration = resolveAgentRouterConfiguration(source);
+  if (provider === 'openrouter') {
+    const configuration = resolveOpenRouterConfiguration(source);
     return {
       model: new OpenAIModel({
-        // Chat Completions is the OpenAI-compatible surface AgentRouter exposes,
+        // Chat Completions is the OpenAI-compatible surface OpenRouter exposes,
         // including the `tools` / `tool_calls` fields the agent loop depends on.
         api: 'chat',
         modelId: configuration.modelId,
@@ -559,7 +577,7 @@ export function createAgentModel(
         // bound is still enforced, through the passthrough the adapter provides.
         params: { max_tokens: AGENT_MAX_OUTPUT_TOKENS },
       }),
-      providerLabel: AGENTROUTER_STRANDS_PROVIDER,
+      providerLabel: OPENROUTER_STRANDS_PROVIDER,
     };
   }
   const configuration = resolveBedrockConfiguration(source);

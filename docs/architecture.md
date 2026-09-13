@@ -44,6 +44,15 @@ perturbation of that baseline, applied before the run exists (see Scenarios).
   same validator sit behind both, tool calling, action validation, persistence,
   metrics and replay are provider-independent; only the model client and the
   provider label persisted with each turn differ.
+- `AGENT_PROVIDER` is the *deployment's* agent. A caller may instead name a
+  selection — a provider this build can serve plus the model it should ask for —
+  and the comparison engine does, to run one benchmark against several agents in
+  one process. A selection is resolved by the same closed set `AGENT_PROVIDER`
+  is checked against, so it can never name a provider this build cannot
+  construct a client for; and it carries no credential, because the credential
+  and (for Bedrock) the region still come from the environment when the client
+  is built. Credentials are deployment configuration, not part of an agent's
+  identity. A turn with no selection runs the deployment's own agent, unchanged.
 - Bedrock credentials are never application env vars. The AWS SDK resolves them
   through its standard credential provider chain (environment, shared config and
   credentials files, SSO, container and instance metadata, web identity), and
@@ -591,6 +600,132 @@ analysed the first N decisions would read as a statement about the whole run.
 benchmark case, an operator-opened run and a counterfactual branch are all
 described to the evaluator identically.
 
+## Agent comparisons
+
+A comparison answers one question: **given the exact same environment, benchmark,
+scenarios, seeds, constraints, action space, tool surface, objective and
+evaluation methodology, which agent configuration behaves better?** It is the
+same world run twice with one thing changed, and it is the reason the layers
+below it are deterministic at all — a comparison of two agents is only a
+statement about the agents if everything else was genuinely held fixed.
+
+The experiment fixes the benchmark and its version, the scenario references and
+their versions, the seed set, the matrix and the comparison methodology. The
+caller supplies only the agents. Because the benchmark's definition, scenarios,
+seeds and objective come from the server-side registry rather than the request,
+a caller cannot arrange a comparison in which its favourite agent met an easier
+world: the `/run` body is parsed by a schema that strips every key but `agents`
+and an optional `seeds`.
+
+**Identity is derived from the fields, never from position.** An agent is
+`agentId@agentVersion` on a provider, asking for a model, optionally carrying
+metadata. The *name* (`agentId@antecedentVersion`) is what a report shows a
+reader; the *configuration key* is what a matrix cell is built from, and it
+joins every field through `encodeURIComponent` so no field can impersonate a
+separator and two genuinely different configurations cannot collapse into one
+column. Agents are sorted by that key, so the order a request listed them in
+cannot reach the report. Two configurations sharing one name but differing in
+provider or model are refused outright rather than silently disambiguated, and
+a repeated configuration is refused rather than reported as two identical
+columns.
+
+A case is keyed `agentKey | scenarioId@scenarioVersion#seed`. The matrix nests
+the comparison dimension around the benchmark engine's own
+`buildRunMatrix`, so the per-agent half is the same builder Phase 3 uses and
+there is no second matrix implementation to drift. Reordering the agents,
+scenarios or seeds changes no identity and no aggregate — the engine's tests
+assert that by rebuilding a report from shuffled inputs and comparing bytes.
+
+**Every run is a fresh, isolated simulation.** Each cell initializes its own
+world from the scenario and seed, and drives it through `runTurn` — the same
+bounded turn the operator path uses, which claims its own turn, validates every
+action through the environment's own validator and persists its own trace. The
+agent is chosen in exactly one place: `runTurn` accepts a `selection` (a
+provider this build can construct a client for, plus a model) and hands it to
+the existing provider boundary. With no selection, the deployment's own agent
+runs, which is what every existing caller gets. Nothing bypasses action
+validation, no module simulates anything itself, and no environment state is
+mutated directly. A comparison is consequently readable through the ordinary
+endpoints: agent → benchmark case → simulation run → counterfactual analysis,
+because the created runs are ordinary `SimulationRun` rows carrying `agentId`,
+`agentVersion`, `benchmarkId`, `benchmarkVersion`, `caseKey` and `seed` in their
+`simulation.started` event.
+
+**A credential is deployment configuration, not part of an agent's identity.**
+A selection names a provider and a model; the credential and, for Bedrock, the
+region still come from the environment when a client is built. That split is
+what lets two agents run in one process against one deployment's credentials
+without either being able to name, carry or leak the other's. It is also why the
+whole engine is testable with no key at all: the unit suite stubs the provider,
+the local harness stubs only the model's *choice of tool*, and no test reads,
+asserts on or prints an environment variable.
+
+### Aggregation
+
+Each agent's figures are the benchmark engine's own, re-expressed rather than
+recomputed: the overall score and the five dimensions, task success and
+completion rates, average steps, budget spent and budget utilisation, average
+risk, rejected-action rate, provider / tool / timeout failure counts, the
+robustness score under `baseline-retention-v1`, and the case counts. A metric
+that cannot be derived from the evidence is `null` and stays `null` — an agent
+that produced no evidence is not scored as zero anywhere, because "no
+measurement" and "measured at zero" are different claims. Robustness is read
+from `robustness.robustnessScore` and its formula name is printed beside it: the
+comparison does not own a second robustness formula.
+
+Ties are stated as ties. A metric on which every agent agrees names *all* of
+them as leaders rather than none, and a neutral metric — steps, budget — names
+no leader at all and has no spread, because it has no better direction. Failure
+counts line up per class per agent, so a difference in *how* two agents failed is
+as visible as a difference in how they scored, and a class the evidence does not
+establish is not inferred from it.
+
+### The verdict
+
+The winner is decided by a declared rule — `declared-discriminator-order-v1` —
+walked over a declared, ordered list of metrics, and every rung it visited is
+recorded in the report with its contenders, its leaders and the value it decided
+on. Each rung narrows to the previous rung's leaders, so an agent already behind
+cannot win a lower rung. The order descends through the evaluation engine's
+dimensions by weight — average overall score, then task, safety, efficiency,
+resource and reliability, then robustness. The floor is `INSUFFICIENT_EVIDENCE`,
+returned when fewer than two agents produced anything scorable, and a tie at
+every rung is reported as `TIE` with `winner: null`.
+
+There is no model in this path. The rule is data, it is deterministic, and it is
+arithmetic on the same fixed-point comparison the benchmark engine already uses,
+so a report does not depend on a floating-point accident. A comparison adds no
+table, no column and no migration: the runs it creates are the evidence, and a
+report is a pure function of those rows. Storing a copy could only let it drift
+from what it claims to summarise.
+
+| Endpoint | Serves |
+| --- | --- |
+| `GET /api/agent-comparisons` | The `ExperimentCatalog`: every experiment, its benchmark, its bounds, its methodology |
+| `GET /api/agent-comparisons/<comparisonId>` | The `ExperimentPlan` the experiment would run — no agents, no evidence |
+| `POST /api/agent-comparisons/<comparisonId>/run` | Runs the comparison and returns the `ComparisonReport` |
+
+Every endpoint requires authentication, scopes its runs to the signed-in owner,
+and validates its input with Zod. `/run` refuses zero agents, fewer than two, a
+malformed identifier or seed, a duplicate agent, a matrix larger than the engine
+will drive, and an agent whose provider this build cannot serve; each maps to an
+explicit status — `404`, `400`, `413`, `503` — rather than a silent `500`. A
+non-`ComparisonError` is answered with a bare `Internal Server Error`, so a
+provider message or a connection string cannot reach a caller.
+
+**A comparison is evidence, not a verdict about agents in general.** Agent Twin
+does not claim that a benchmark score proves an agent is universally better. The
+result means: *under the defined benchmark and simulated conditions, the observed
+agent behavior scored better according to the defined evaluation methodology.*
+The provider's own output is allowed to vary between live runs — that is exactly
+why the methodology is held fixed and recorded (experiment id and version,
+benchmark id and version, agent configurations, scenario ids and versions, seeds,
+case counts, completed and failed counts, the robustness formula and the verdict
+rule) while the observed results are reported as they were actually observed.
+Two agents that miss *different* cases can tie on task success and still be
+separated on overall score; the report shows both facts rather than collapsing
+them into one number.
+
 ## Persistence
 
 Simulation tables are app-owned. They are created by forward-only, purely
@@ -602,7 +737,12 @@ migrations and `migration_lock.toml` are untouched. The benchmark layer adds no
 migration at all: it stores nothing of its own, and the runs it creates are
 ordinary runs in the tables above. The counterfactual layer adds no migration and
 no column either: it stores nothing, and it analyses an existing trace through
-`loadRun`, reading exactly the tables a replay and an evaluation already read.
+`loadRun`, reading exactly the tables a replay and an evaluation already read. The
+comparison layer likewise adds no migration, no table and no column: a comparison
+report is computed on demand from the `SimulationRun` rows it created, which are
+ordinary runs carrying their agent attribution in the `simulation.started` event
+payload. Caching a report would introduce a second copy of the evidence that
+could disagree with it.
 
 ## Extension points
 
@@ -621,7 +761,13 @@ to what the existing one means. A new continuation assumption belongs as a new
 named, versioned policy in the counterfactual layer, stated in the report
 alongside the one it replaces — never as a change to what
 `replay-recorded-attempts-v1` means, because two reports that name the same
-policy must be comparable.
+policy must be comparable. A new *comparison experiment* belongs in the
+comparison layer's definition list as data — a benchmark reference, a
+methodology, a verdict rule and its bounds — never as a branch inside the
+aggregation; and a change to the verdict order is a change to what
+`declared-discriminator-order-v1` means, so it arrives as a new named rule
+rather than as an edit that would silently reinterpret every report already
+produced under the old one.
 
 ## Legacy surface
 

@@ -61,6 +61,22 @@ export const BenchmarkAgentConfiguration = z.object({
 });
 export type BenchmarkAgentConfiguration = z.infer<typeof BenchmarkAgentConfiguration>;
 
+/**
+ * The agent a set of runs is attributed to.
+ *
+ * The benchmark engine does not mint identities and does not interpret them. It
+ * records the label its executor supplied so a run's evidence can be traced
+ * back to the agent that produced it; what that label *means* — which provider,
+ * which model, which configuration — is the comparison layer's business. A run
+ * that carries no attribution keeps `null` here rather than a placeholder,
+ * because "no agent recorded" and "this agent" are different claims.
+ */
+export const BenchmarkAgentAttribution = z.object({
+  agentId: z.string().min(1).max(64),
+  agentVersion: z.string().min(1).max(64),
+});
+export type BenchmarkAgentAttribution = z.infer<typeof BenchmarkAgentAttribution>;
+
 /** A reference to a scenario the benchmark runs under, pinned to a version. */
 export const BenchmarkScenario = z.object({
   id: z.string().min(1).max(64),

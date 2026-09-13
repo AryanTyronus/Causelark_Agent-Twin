@@ -1,6 +1,7 @@
 // @polsia:user-owned — environment-specific Strands orchestration.
 
 import {
+  type AgentSelection,
   clampAgentLoopTurns,
   invokeResourceAgent,
   type ResourceAgentResult,
@@ -23,6 +24,12 @@ export interface ResourceAgentTurnInput {
   /** Wall-clock budget for the whole bounded turn. */
   timeoutMs: number;
   maxActionsPerTurn?: number;
+  /**
+   * The agent that runs this turn. Omitted, the deployment's own agent runs —
+   * the environment, the tools, the objective and the bounds are identical
+   * either way, so the selection is the only thing this layer varies.
+   */
+  selection?: AgentSelection | null;
 }
 
 /**
@@ -53,6 +60,7 @@ export async function runResourceAgentTurn(
     timeoutMs: input.timeoutMs,
     maxTurns: resolveAgentLoopTurns(maxActions),
     maxActions,
+    selection: input.selection ?? null,
   });
   return { toolbox, provider };
 }

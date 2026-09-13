@@ -133,11 +133,18 @@ describe('selectable model providers', () => {
     );
 
     expect(resolver).toMatch(/source\.BEDROCK_MODEL_ID/);
-    expect(resolver).toMatch(/source\.BEDROCK_REGION/);
-    expect(resolver).toMatch(/source\.AWS_REGION/);
+    // The region half is resolved by its own function so an agent *selection*
+    // can name a model without the deployment having to name one too. The
+    // property is unchanged — the region still comes from configuration — so it
+    // is asserted where it now lives.
+    expect(resolver).toMatch(/resolveBedrockRegion\(source\)/);
+    const region = segment(provider, 'export function resolveBedrockRegion', '\n}');
+    expect(region).toMatch(/source\.BEDROCK_REGION/);
+    expect(region).toMatch(/source\.AWS_REGION/);
     // No baked-in model or provider default: an unconfigured deployment must
     // fail rather than silently bill against an SDK default model.
     expect(resolver).not.toMatch(/claude|anthropic|amazon|nova|titan|llama|mistral|cohere/i);
+    expect(region).not.toMatch(/claude|anthropic|amazon|nova|titan|llama|mistral|cohere/i);
   });
 
   it('takes the OpenRouter endpoint, credential and model from configuration', () => {
@@ -146,17 +153,27 @@ describe('selectable model providers', () => {
       'export function resolveOpenRouterConfiguration',
       'export function',
     );
+    const endpoint = segment(
+      provider,
+      'export function resolveOpenRouterEndpoint',
+      'export function',
+    );
 
-    expect(resolver).toMatch(/source\.OPENROUTER_BASE_URL/);
-    expect(resolver).toMatch(/source\.OPENROUTER_API_KEY/);
+    // The model is the caller's; the endpoint and credential are the
+    // deployment's. Splitting them is what lets a selection name a model
+    // without carrying — or being able to leak — a credential.
+    expect(endpoint).toMatch(/source\.OPENROUTER_BASE_URL/);
+    expect(endpoint).toMatch(/source\.OPENROUTER_API_KEY/);
     expect(resolver).toMatch(/source\.OPENROUTER_MODEL/);
+    expect(resolver).toMatch(/resolveOpenRouterEndpoint\(source\)/);
     // The endpoint is the only permitted provider host literal in the agent
     // path, and it is the OpenAI-compatible base of the current provider.
     const hosts = [...provider.matchAll(/https?:\/\/([^'"\s]+)/g)].map((match) => match[1]);
     expect(hosts).toEqual(['openrouter.ai/api/v1']);
     // An unset key or model must fail rather than dispatch an unauthenticated
     // request, or run a model the operator never chose.
-    expect(resolver).toMatch(/if\s*\(!apiKey\s*\|\|\s*!modelId\)/);
+    expect(endpoint).toMatch(/if\s*\(!apiKey\)/);
+    expect(resolver).toMatch(/if\s*\(!modelId\)/);
   });
 
   it('carries no trace of the provider OpenRouter replaced', () => {
@@ -167,17 +184,44 @@ describe('selectable model providers', () => {
   });
 
   it('passes each provider its own configuration and nothing else', () => {
-    const factory = segment(provider, 'export function createAgentModel', '\n}');
+    const factory = segment(provider, 'export function createAgentModelFor', '\n}');
 
     expect(factory).toMatch(/new OpenAIModel\(/);
     expect(factory).toMatch(/api:\s*'chat'/);
-    expect(factory).toMatch(/modelId:\s*configuration\.modelId/);
-    expect(factory).toMatch(/apiKey:\s*configuration\.apiKey/);
-    expect(factory).toMatch(/baseURL:\s*configuration\.baseUrl/);
+    // The model comes from the selection; the credential and endpoint come from
+    // the environment. Neither can be supplied by the other.
+    expect(factory).toMatch(/modelId:\s*selection\.modelId/);
+    expect(factory).toMatch(/resolveOpenRouterEndpoint\(source\)/);
+    expect(factory).toMatch(/baseURL:\s*baseUrl/);
+    expect(factory).toMatch(/apiKey,/);
     expect(factory).toMatch(/new BedrockModel\(/);
-    expect(factory).toMatch(/region:\s*configuration\.region/);
-    // The key reaches the model client and nothing else on the boundary.
-    expect(provider.match(/configuration\.apiKey/g)).toHaveLength(1);
+    expect(factory).toMatch(/region:\s*resolveBedrockRegion\(source\)/);
+    // The key is read in exactly one place on the boundary and reaches the
+    // model client and nothing else.
+    expect(provider.match(/source\.OPENROUTER_API_KEY/g)).toHaveLength(1);
+    expect(factory).not.toMatch(/source\.OPENROUTER_API_KEY/);
+    expect(factory).not.toMatch(/process\.env/);
+  });
+
+  it('lets a selection name a model but never a credential', () => {
+    const selection = segment(provider, 'export interface AgentSelection', '\n}');
+    expect(selection).toMatch(/provider:\s*AgentProviderKind/);
+    expect(selection).toMatch(/modelId:\s*string/);
+    // A selection travels through a request, an experiment definition and a
+    // report, so anything credential-shaped on it would leak by construction.
+    expect(selection).not.toMatch(/apiKey|secret|token|password|credential/i);
+
+    // And a selection that names a provider this build cannot construct is
+    // refused here rather than reaching a model client.
+    const parse = segment(provider, 'export function parseAgentProviderKind', '\n}');
+    expect(parse).toMatch(/'bedrock'\s*\|\|\s*requested\s*===\s*'openrouter'/);
+    expect(parse).toMatch(/throw new AgentProviderError/);
+
+    const resolve = segment(provider, 'export function resolveAgentSelection', '\n}');
+    expect(resolve).toMatch(/input:\s*\{\s*provider:\s*string/);
+    expect(resolve).toMatch(/model:\s*string/);
+    expect(resolve).toMatch(/parseAgentProviderKind\(input\.provider\)/);
+    expect(resolve).toMatch(/requireModelId\(input\.model\)/);
   });
 
   it('bounds a single invocation on both axes: model turns and wall-clock time', () => {

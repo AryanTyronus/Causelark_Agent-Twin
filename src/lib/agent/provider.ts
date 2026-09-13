@@ -17,6 +17,14 @@
 // metrics and replay are identical either way — only the model client differs.
 // There is no silent fallback: an unrecognised `AGENT_PROVIDER` fails the turn.
 //
+// The agent a turn runs on is normally the one this deployment is configured
+// for, resolved from `AGENT_PROVIDER` and its model variable. A caller may
+// instead name a selection explicitly — the comparison engine does, to run the
+// same benchmark against more than one agent in one process. A selection names
+// a provider this build can construct a client for and the model that client
+// should ask for; it never names a credential, because credentials are
+// deployment configuration rather than part of an agent's identity.
+//
 // AWS credentials are never read from application env vars; the AWS SDK resolves
 // them through its standard credential provider chain (environment, shared
 // config/credentials files, SSO, container/instance metadata, web identity).
@@ -151,6 +159,16 @@ function trimmed(value: string | undefined): string | undefined {
 }
 
 /**
+ * The provider region override, or `undefined` to let the AWS SDK resolve it
+ * from its own chain (AWS_REGION, AWS_DEFAULT_REGION, shared config, IMDS),
+ * which is the documented AWS behaviour and keeps deployment configuration out
+ * of this file.
+ */
+export function resolveBedrockRegion(source: BedrockEnvironment): string | undefined {
+  return trimmed(source.BEDROCK_REGION) ?? trimmed(source.AWS_REGION);
+}
+
+/**
  * Resolves the Bedrock model ID and region from configuration. A missing model ID
  * is a configuration failure rather than a silent fall back to the SDK default:
  * the model that gets billed should always be the model the operator chose.
@@ -164,10 +182,7 @@ export function resolveBedrockConfiguration(
       'missing_configuration',
       AGENT_PROVIDER_SAFE_MESSAGES.missing_configuration,
     );
-  return {
-    modelId,
-    region: trimmed(source.BEDROCK_REGION) ?? trimmed(source.AWS_REGION),
-  };
+  return { modelId, region: resolveBedrockRegion(source) };
 }
 
 /** The OpenRouter-facing environment: server-only credentials plus endpoint config. */
@@ -177,31 +192,34 @@ export interface OpenRouterEnvironment {
   OPENROUTER_MODEL?: string | undefined;
 }
 
-export interface OpenRouterConfiguration {
+/** The credential and endpoint half of the OpenRouter configuration. */
+export interface OpenRouterEndpoint {
   /** OpenAI-compatible base URL; the SDK client appends `/chat/completions`. */
   baseUrl: string;
   /** Server-only credential. Never persisted, logged, or returned. */
   apiKey: string;
+}
+
+export interface OpenRouterConfiguration extends OpenRouterEndpoint {
   modelId: string;
 }
 
 /**
- * Resolves the OpenRouter endpoint, credential and model.
+ * Resolves the OpenRouter endpoint and credential, without a model.
  *
  * The endpoint is configuration rather than a literal so an operator can point
  * at a different deployment, but it defaults to OpenRouter's public
  * OpenAI-compatible base. A missing API key is a configuration failure: there is
  * no anonymous mode, so the turn fails visibly instead of dispatching an
- * unauthenticated request. A missing model is a configuration failure for the
- * same reason — OpenRouter serves a large catalogue, and running an unchosen
- * model is not a safe default.
+ * unauthenticated request.
+ *
+ * Kept separate from the model so an agent *selection* — which names its own
+ * model — can still be served by this deployment's credential. A credential is
+ * deployment configuration, not part of an agent's identity; only the model is.
  */
-export function resolveOpenRouterConfiguration(
-  source: OpenRouterEnvironment,
-): OpenRouterConfiguration {
+export function resolveOpenRouterEndpoint(source: OpenRouterEnvironment): OpenRouterEndpoint {
   const apiKey = trimmed(source.OPENROUTER_API_KEY);
-  const modelId = trimmed(source.OPENROUTER_MODEL);
-  if (!apiKey || !modelId)
+  if (!apiKey)
     throw new AgentProviderError(
       'missing_configuration',
       OPENROUTER_SAFE_MESSAGES.missing_configuration,
@@ -209,8 +227,26 @@ export function resolveOpenRouterConfiguration(
   return {
     baseUrl: trimmed(source.OPENROUTER_BASE_URL) ?? DEFAULT_OPENROUTER_BASE_URL,
     apiKey,
-    modelId,
   };
+}
+
+/**
+ * Resolves the OpenRouter endpoint, credential and model.
+ *
+ * A missing model is a configuration failure for the same reason a missing key
+ * is — OpenRouter serves a large catalogue, and running an unchosen model is
+ * not a safe default.
+ */
+export function resolveOpenRouterConfiguration(
+  source: OpenRouterEnvironment,
+): OpenRouterConfiguration {
+  const modelId = trimmed(source.OPENROUTER_MODEL);
+  if (!modelId)
+    throw new AgentProviderError(
+      'missing_configuration',
+      OPENROUTER_SAFE_MESSAGES.missing_configuration,
+    );
+  return { ...resolveOpenRouterEndpoint(source), modelId };
 }
 
 /** The full environment the provider resolves its selection and model from. */
@@ -228,8 +264,88 @@ export interface AgentProviderEnvironment extends BedrockEnvironment, OpenRouter
 export function resolveAgentProvider(source: AgentProviderEnvironment): AgentProviderKind {
   const requested = trimmed(source.AGENT_PROVIDER);
   if (!requested) return DEFAULT_AGENT_PROVIDER;
+  return parseAgentProviderKind(requested);
+}
+
+/**
+ * Reads a provider label that arrived as data — from a request, a stored
+ * experiment or configuration — rather than as a compile-time choice.
+ *
+ * It is the same closed set `resolveAgentProvider` accepts, so a label that
+ * names a provider this build cannot serve is refused here rather than reaching
+ * a model client. There is deliberately no guessing: an unrecognised label is a
+ * configuration failure, never a fall back to the default provider.
+ */
+export function parseAgentProviderKind(value: string): AgentProviderKind {
+  const requested = trimmed(value);
   if (requested === 'bedrock' || requested === 'openrouter') return requested;
   throw new AgentProviderError('missing_configuration', AGENT_PROVIDER_SELECTION_MESSAGE);
+}
+
+/** A model id that arrived as data, refused when it names nothing. */
+export function requireModelId(value: string): string {
+  const modelId = trimmed(value);
+  if (!modelId)
+    throw new AgentProviderError(
+      'missing_configuration',
+      'An agent configuration must name the model it runs.',
+    );
+  return modelId;
+}
+
+/**
+ * Which provider and which model a turn runs on.
+ *
+ * This is the whole of what varies between two agents under comparison: the
+ * environment, the seed, the scenario, the tools, the objective and the
+ * evaluation are identical, and the selection is what differs. It names no
+ * credential — credentials are deployment configuration and are resolved from
+ * the environment at the moment a client is built — so a selection is safe to
+ * carry through a request, an experiment definition and a report.
+ */
+export interface AgentSelection {
+  provider: AgentProviderKind;
+  modelId: string;
+}
+
+/** The model a provider runs in this deployment, without constructing a client. */
+function selectionForProvider(
+  provider: AgentProviderKind,
+  source: AgentProviderEnvironment,
+): AgentSelection {
+  return {
+    provider,
+    modelId:
+      provider === 'openrouter'
+        ? resolveOpenRouterConfiguration(source).modelId
+        : resolveBedrockConfiguration(source).modelId,
+  };
+}
+
+/**
+ * The agent this deployment runs when nothing names one, resolved without
+ * constructing a model client — so a caller can record or report which agent an
+ * environment is configured for without opening a provider connection.
+ */
+export function resolveDeployedSelection(source: AgentProviderEnvironment): AgentSelection {
+  return selectionForProvider(resolveAgentProvider(source), source);
+}
+
+/**
+ * A requested provider-and-model pair, resolved onto a selection.
+ *
+ * The provider label is checked against the closed set the provider module
+ * owns, so an unknown provider is refused before any work is done. The model is
+ * *not* checked against a catalogue: a build cannot know which models a
+ * provider serves today, and a baked-in list would go stale. What makes a
+ * selection trustworthy is that the provider it names is one this build can
+ * actually construct a client for; the model is the provider's business.
+ */
+export function resolveAgentSelection(input: { provider: string; model: string }): AgentSelection {
+  return {
+    provider: parseAgentProviderKind(input.provider),
+    modelId: requireModelId(input.model),
+  };
 }
 
 /** The persisted label for a resolved provider. */
@@ -502,6 +618,12 @@ export interface ResourceAgentInvocation {
   maxTurns?: number;
   /** Upper bound on how many actions the agent should attempt this turn. */
   maxActions?: number;
+  /**
+   * The agent this invocation runs on. Omitted, the deployment's own agent runs,
+   * which is the behaviour every existing caller keeps: the selection is an
+   * addition to the boundary, not a change to it.
+   */
+  selection?: AgentSelection | null;
 }
 
 export interface ResourceAgentResult {
@@ -546,30 +668,35 @@ export interface AgentModelSelection {
 }
 
 /**
- * Builds the Strands model client for the selected provider.
+ * Builds the Strands model client for a selection.
  *
  * Both branches return a plain Strands `Model`, so everything downstream — the
  * bounded `Agent`, the allow-listed tools, tool execution, metrics and the
  * persisted metadata — is provider-independent. Only the client differs.
  *
+ * What the selection supplies is the *model*; what the environment still
+ * supplies is the credential and, for Bedrock, the region. That split is what
+ * lets two agents run against one deployment's credentials without either of
+ * them being able to name, carry or leak the other's.
+ *
  * Configuration is resolved before any client is constructed, so a missing
- * model ID or API key fails as a normalized configuration error rather than as
- * an opaque SDK throw.
+ * credential fails as a normalized configuration error rather than as an opaque
+ * SDK throw.
  */
-export function createAgentModel(
-  provider: AgentProviderKind,
+export function createAgentModelFor(
+  selection: AgentSelection,
   source: AgentProviderEnvironment,
 ): AgentModelSelection {
-  if (provider === 'openrouter') {
-    const configuration = resolveOpenRouterConfiguration(source);
+  if (selection.provider === 'openrouter') {
+    const { apiKey, baseUrl } = resolveOpenRouterEndpoint(source);
     return {
       model: new OpenAIModel({
         // Chat Completions is the OpenAI-compatible surface OpenRouter exposes,
         // including the `tools` / `tool_calls` fields the agent loop depends on.
         api: 'chat',
-        modelId: configuration.modelId,
-        apiKey: configuration.apiKey,
-        clientConfig: { baseURL: configuration.baseUrl },
+        modelId: selection.modelId,
+        apiKey,
+        clientConfig: { baseURL: baseUrl },
         temperature: AGENT_TEMPERATURE,
         // `maxTokens` is deliberately not set: the adapter turns it into
         // `max_completion_tokens`, which is OpenAI's own newer field rather than
@@ -580,11 +707,10 @@ export function createAgentModel(
       providerLabel: OPENROUTER_STRANDS_PROVIDER,
     };
   }
-  const configuration = resolveBedrockConfiguration(source);
   return {
     model: new BedrockModel({
-      modelId: configuration.modelId,
-      region: configuration.region,
+      modelId: selection.modelId,
+      region: resolveBedrockRegion(source),
       maxTokens: AGENT_MAX_OUTPUT_TOKENS,
       temperature: AGENT_TEMPERATURE,
     }),
@@ -592,14 +718,26 @@ export function createAgentModel(
   };
 }
 
+/**
+ * Builds the Strands model client for a provider, taking the model from the
+ * deployment's own configuration. Exactly `createAgentModelFor` over the
+ * selection this environment resolves.
+ */
+export function createAgentModel(
+  provider: AgentProviderKind,
+  source: AgentProviderEnvironment,
+): AgentModelSelection {
+  return createAgentModelFor(selectionForProvider(provider, source), source);
+}
+
 export async function invokeResourceAgent(
   input: ResourceAgentInvocation,
 ): Promise<ResourceAgentResult> {
-  const provider = resolveAgentProvider(env);
+  const selection = input.selection ?? resolveDeployedSelection(env);
   const maxTurns = clampAgentLoopTurns(input.maxTurns);
   const maxActions = Math.max(1, Math.floor(input.maxActions ?? 1));
   const startedAt = Date.now();
-  const { model, providerLabel } = createAgentModel(provider, env);
+  const { model, providerLabel } = createAgentModelFor(selection, env);
   const agent = new Agent({
     model,
     tools: input.tools,
@@ -621,7 +759,10 @@ export async function invokeResourceAgent(
     // The SDK reports an aborted invocation as a result rather than a throw, so
     // the timeout has to be read back off the stop reason.
     if (result.stopReason === 'cancelled')
-      throw new AgentProviderError('timeout', safeProviderMessageFor(provider, 'timeout'));
+      throw new AgentProviderError(
+        'timeout',
+        safeProviderMessageFor(selection.provider, 'timeout'),
+      );
     const usage = result.metrics?.latestAgentInvocation?.usage;
     const toolMetrics = result.metrics?.toolMetrics ?? {};
     const toolCallCount = Object.values(toolMetrics).reduce(
@@ -646,6 +787,6 @@ export async function invokeResourceAgent(
       stopReason: result.stopReason,
     };
   } catch (error) {
-    throw toAgentProviderError(error, provider);
+    throw toAgentProviderError(error, selection.provider);
   }
 }

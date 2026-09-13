@@ -96,6 +96,8 @@ Model providers sit behind one abstraction boundary, `src/lib/agent/provider.ts`
 
 Provider selection is explicit and **never falls back**. An unrecognised `AGENT_PROVIDER` fails the turn with a visible configuration error rather than quietly running — and billing — the other provider. Unset selects Bedrock, so an existing deployment is unaffected. The same applies in the other direction: `AGENT_PROVIDER=bedrock` with an incomplete Bedrock configuration fails rather than falling forward to OpenRouter.
 
+`AGENT_PROVIDER` is the **deployment's** agent. A caller may instead name a *selection* — a provider this build can serve, plus the model it should ask for — which is how the comparison engine runs one benchmark against several agents in a single process. A selection is checked against the same closed set, so it can never name a provider this build cannot construct a client for, and it carries no credential: the credential and, for Bedrock, the region still come from the environment above when the client is built. A turn with no selection runs the deployment's own agent, unchanged.
+
 Provider failures are classified into stable codes — `missing_configuration`, `missing_credentials`, `access_denied`, `throttled`, `timeout`, `provider_error` — by walking the error cause chain, so a failure is recorded as a categorised event rather than an opaque string. Raw provider responses, request bodies, authorization headers, and API keys are never persisted.
 
 ### Amazon Bedrock (default)
@@ -209,9 +211,11 @@ Prisma/PostgreSQL persistence
 Metrics / Replay / Evaluation
  ↓
 Counterfactual analysis (derived from a recorded trace)
+ ↓
+Benchmarks & agent comparison (same world, different agent)
 ```
 
-The dashboard at `/dashboard/simulations` starts runs; `/dashboard/simulations/<runId>` is the run inspector, showing the observable world, the current observation, objective progress, tasks and guardrails, the persisted activity trace, action history, run metrics, and a replay scrubber.
+The dashboard at `/dashboard/simulations` starts runs; `/dashboard/simulations/<runId>` is the run inspector, showing the observable world, the current observation, objective progress, tasks and guardrails, the persisted activity trace, action history, run metrics, and a replay scrubber. A comparison has no UI yet: it is an API-only layer, and the runs it creates appear in the existing inspector like any other run.
 
 ## Tech Stack
 
@@ -293,16 +297,41 @@ Latest local verification, on the current working tree:
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Tests | `npm run test` | 785 tests passing (29 test files) |
-| Lint | `npm run lint` | Passing (202 files checked) |
+| Tests | `npm run test` | 1011 tests passing (35 test files) |
+| Lint | `npm run lint` | Passing (224 files checked) |
 | Build | `npm run build` | Passing |
 | Typecheck | `npm run typecheck` | Passing |
 
-Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, the evaluation engine's scoring, determinism, purity and bounds, the scenario engine — its catalogue, each shipped scenario, validation and refusal, immutability, determinism, modifier ordering and versioning — the benchmark engine — its declarative definitions and registry, the deterministic run matrix, execution through the real simulation/agent/persistence path, aggregation, the robustness metric, the degradation table, failure analysis, the HTTP surface — and the counterfactual engine: the derived action space, the decision points read out of a trace, the continuation policy, the comparison against the recorded verdict, the report's accounting and ranking, the HTTP surface, and the boundaries of every calculation module (no clock, randomness, provider, database, network or dynamic discovery).
+Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, the evaluation engine's scoring, determinism, purity and bounds, the scenario engine — its catalogue, each shipped scenario, validation and refusal, immutability, determinism, modifier ordering and versioning — the benchmark engine — its declarative definitions and registry, the deterministic run matrix, execution through the real simulation/agent/persistence path, aggregation, the robustness metric, the degradation table, failure analysis, the HTTP surface — the counterfactual engine: the derived action space, the decision points read out of a trace, the continuation policy, the comparison against the recorded verdict, the report's accounting and ranking, the HTTP surface, and the boundaries of every calculation module (no clock, randomness, provider, database, network or dynamic discovery) — and the comparison engine: agent configuration identity and its stability under reordering, the nested matrix and case identity, per-agent isolation, aggregation against the benchmark engine's own numbers, metric and head-to-head comparison, tie semantics, the declared verdict rule, scenario-level comparison, robustness reuse, failure profiles, the isolation of a failing agent, the HTTP surface with every error-to-status mapping, and a static boundary guard proving the calculation modules reach no clock, randomness, network, model, database or vendor name.
 
 The benchmark engine is additionally verified against a real PostgreSQL database by a separate harness that is deliberately **not** part of `npm test`: `npx vitest run --config vitest.verification.config.ts`. It runs the full twelve-step local verification — resolution, matrix, execution, isolation, scenario identity, evaluation, failure visibility, aggregate determinism, robustness arithmetic, replay and rerun — against a disposable database, with only the model provider stubbed. It creates real runs and does not remove them, so point it at a throwaway database.
 
 The counterfactual engine is verified against a real PostgreSQL database by the same harness: it starts a run, records a fourteen-attempt trace through the real action endpoint (including one attempt the environment refused mid-run and one it refused after the run had already terminated), then analyses that trace through the real counterfactual endpoint — checking the report's accounting against what the database holds, asserting that the second request returns the same bytes, and asserting the identity round trip over every decision the environment accepted.
+
+The comparison engine is verified the same way, and runs a real two-agent experiment end to end. It resolves an experiment and its matrix, executes fourteen real benchmark cases (two agents × seven scenarios at one seed) through the ordinary turn path, and then checks the comparison against the rows the database actually holds: that every run belongs to the caller and to nobody else, that both agents met a byte-identical starting world per scenario, that the aggregate equals the benchmark report's own numbers, that the provider fault stays against the agent that produced it, that the verdict is the declared rule's, and that a configuration this deployment cannot run is reported as unavailable without costing the other agent its evidence. Exactly one thing is stubbed: the model provider. The stub is not a fake simulation — it invokes the same allow-listed tools the real agent would, so every action still passes through the environment's own validator and is persisted identically. What it replaces is only the choice of which tool to call, which is the one thing a language model decides.
+
+**Running a comparison with a stub provider.** The harness above is the stub path and needs no credential:
+
+```bash
+createdb causelark_verify            # a throwaway database
+DATABASE_URL='postgresql://…/causelark_verify' npm run db:migrate:deploy
+DATABASE_URL='postgresql://…/causelark_verify' npx vitest run --config vitest.verification.config.ts
+dropdb causelark_verify
+```
+
+It creates real runs and does not remove them, so point it at a throwaway database.
+
+**Running a comparison against live providers.** The seam is the agent *selection*: `POST /api/agent-comparisons/resource-routing-agent-comparison/run` with a body naming the agents, each a `agentId`, `agentVersion`, `provider` and `model`. A selection carries no credential — the credential is resolved from the deployment's own environment when the client is built, so the same endpoint runs a Bedrock agent and an OpenRouter agent side by side provided both are configured:
+
+```bash
+curl -sS -X POST 'http://localhost:3000/api/agent-comparisons/resource-routing-agent-comparison/run' \
+  -H 'content-type: application/json' --cookie "$SESSION_COOKIE" \
+  -d '{"agents":[
+        {"agentId":"nex-mini","agentVersion":"1","provider":"openrouter","model":"…"},
+        {"agentId":"claude","agentVersion":"1","provider":"bedrock","model":"…"}]}'
+```
+
+Both agents then meet the same scenarios, the same seeds, the same starting world, the same objective, the same tool surface, the same bounds and the same evaluation — only the selection differs. Provider output is allowed to vary between live runs, which is why the methodology is held fixed and recorded while the observed results are reported as observed. `GET /api/agent-comparisons/resource-routing-agent-comparison` serves that plan without running it, and `GET /api/agent-comparisons` lists the experiments. Every endpoint requires a signed-in session and scopes its runs to that owner.
 
 Migration deployment was verified separately: all four migrations apply cleanly to a fresh disposable PostgreSQL database, `prisma migrate status` reports the schema up to date, and `prisma migrate diff` is empty in both directions — no schema drift.
 
@@ -330,14 +359,17 @@ Separately, during scenario-engine verification (2026-09-13) the OpenRouter key 
 - `GET /api/benchmarks` serving the benchmark catalogue, and `POST /api/benchmarks/<benchmarkId>/run` executing a benchmark and returning the report
 - Counterfactual & causal analysis engine: deterministic counterfactual transitions built from the decision points of an existing persisted trace, through the environment's own validator and the existing evaluation engine — no second simulation, no model call, no new scoring formula. Every number in a report is stated under three named policies (`enumerated-valid-actions-v1`, `replay-recorded-attempts-v1`, `held-constant-non-environment-evidence-v1`); the engine's central property is that replaying the recorded choice as its own alternative reproduces the recorded run exactly, attempt for attempt
 - `GET /api/simulations/runs/<runId>/counterfactual` serving the whole-run report — per-decision regret, the action space, the ranking, and the decision that gave up the most — and `?decision=<index>` serving one decision point with every alternative's counterfactual state and verdict
+- Agent / model comparison engine: a typed, provider-agnostic agent configuration whose identity is derived from its fields rather than from array position or an unordered serialisation; an experiment that fixes the benchmark, scenarios, seeds, objective and methodology while the caller supplies only the agents; a matrix nesting the comparison dimension around the benchmark engine's own; per-case isolation through the ordinary turn path; per-agent aggregation that re-expresses the benchmark engine's numbers and leaves an unmeasurable metric `null` rather than zero; head-to-head and scenario-level comparison with explicit tie handling; and a deterministic verdict (`declared-discriminator-order-v1`) walked over a declared discriminator order with every rung recorded — no LLM judge anywhere in the path
+- `GET /api/agent-comparisons` serving the experiment catalogue, `GET /api/agent-comparisons/<comparisonId>` serving the plan without running it, and `POST /api/agent-comparisons/<comparisonId>/run` running the comparison and returning the report
 - `GET /api/scenarios` serving the catalogue, and an optional `scenarioId` on run creation
 - `GET /api/simulations/runs/<runId>/evaluation` serving the verdict alongside the raw metric set behind it
 - Dashboard run starter and run inspector
 - Provider error classification, with no credential or raw-response persistence
-- Local verification gates green: 785 tests, lint, production build, typecheck
+- Local verification gates green: 1011 tests, lint, production build, typecheck
 - Migration deployment verified against a fresh disposable PostgreSQL database, with no schema drift
 - Benchmark execution verified end-to-end against a disposable PostgreSQL database, with only the model provider stubbed
 - Counterfactual analysis verified end-to-end against a disposable PostgreSQL database: a real trace recorded through the real action endpoint, analysed through the real counterfactual endpoint, with the report's accounting checked against what the database actually holds and the identity round trip asserted over every accepted decision
+- Agent comparison verified end-to-end against a disposable PostgreSQL database, with only the choice of tool stubbed: fourteen real benchmark cases across two agents, checked against the persisted rows for ownership scoping, per-scenario world identity, aggregate agreement with the benchmark engine, failure attribution, the verdict, and the isolation of an agent this deployment cannot run
 
 ### Provider verification
 

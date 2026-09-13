@@ -3,7 +3,12 @@
 import 'server-only';
 
 import type { Prisma } from '@prisma/client';
-import { AgentProviderError, selectedProviderLabel } from '@/lib/agent/provider';
+import {
+  AgentProviderError,
+  type AgentSelection,
+  agentProviderLabel,
+  selectedProviderLabel,
+} from '@/lib/agent/provider';
 import { runResourceAgentTurn } from '@/lib/agent/resource-agent';
 import { DEFAULT_MAX_ACTIONS_PER_TURN } from '@/lib/agent/resource-tools';
 import { getSimulationOptions, getSimulationStatus } from '@/lib/business/simulation';
@@ -19,11 +24,24 @@ export class TurnConflictError extends Error {
   }
 }
 
+export interface TurnOptions {
+  /**
+   * The agent that runs this turn. Omitted, the deployment's own agent runs.
+   *
+   * A turn is the only thing that may move a run, so this is the only place an
+   * agent can be chosen: whichever agent is selected, it meets the same
+   * environment, the same validator, the same tools, the same objective and the
+   * same persisted trace. Nothing else about the turn changes.
+   */
+  selection?: AgentSelection | null;
+}
+
 function errorKind(error: AgentProviderError): 'TIMEOUT' | 'ERROR' {
   return error.code === 'timeout' ? 'TIMEOUT' : 'ERROR';
 }
 
-export async function runTurn(runId: string, ownerId: string) {
+export async function runTurn(runId: string, ownerId: string, options: TurnOptions = {}) {
+  const selection = options.selection ?? null;
   const claimed = await prisma.simulationRun.updateMany({
     where: { id: runId, ownerId, status: 'RUNNING', turnInProgress: false },
     data: { turnInProgress: true, agentStatus: 'THINKING' },
@@ -34,11 +52,17 @@ export async function runTurn(runId: string, ownerId: string) {
     const run = await loadRun(runId, ownerId);
     if (!run) throw new TurnConflictError();
     const state = SimulationState.parse(run.state);
-    const options = getSimulationOptions();
+    // Named apart from this function's own `options`, which carry the agent
+    // selection: this is the environment's catalogue, that is the turn's.
+    const catalogue = getSimulationOptions();
     // The run's own persisted configuration governs its turn budget, not the
     // catalogue default the run may have overridden at creation time.
-    const configuration = SimulationConfiguration.parse(run.configuration ?? options.configuration);
-    const objective = options.objectives.find((item) => item.key === run.objectiveKey)?.description;
+    const configuration = SimulationConfiguration.parse(
+      run.configuration ?? catalogue.configuration,
+    );
+    const objective = catalogue.objectives.find(
+      (item) => item.key === run.objectiveKey,
+    )?.description;
     if (!objective)
       throw new AgentProviderError('provider_error', 'Simulation objective is unavailable.');
     const agentRun = await runResourceAgentTurn({
@@ -46,6 +70,7 @@ export async function runTurn(runId: string, ownerId: string) {
       state,
       timeoutMs: configuration.toolTimeoutMs,
       maxActionsPerTurn: DEFAULT_MAX_ACTIONS_PER_TURN,
+      selection,
     });
     const outcomes = agentRun.toolbox.getOutcomes();
     const finalState = agentRun.toolbox.getState();
@@ -275,8 +300,10 @@ export async function runTurn(runId: string, ownerId: string) {
       turn: {
         status: 'FAILED' as const,
         // The turn must name the provider it was actually attempting, including
-        // when the provider selection itself was what failed.
-        provider: selectedProviderLabel(env),
+        // when the provider selection itself was what failed. When a caller
+        // named the agent, the name comes from that selection — reading the
+        // environment here would report a provider that was never invoked.
+        provider: selection ? agentProviderLabel(selection.provider) : selectedProviderLabel(env),
         toolCalls: 0,
         acceptedActions: 0,
         safeError: message,

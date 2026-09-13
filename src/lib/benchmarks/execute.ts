@@ -13,7 +13,9 @@
 //                `POST /api/simulations/runs` writes
 //   agent      → `runTurn`, the one bounded agent step, which claims its own
 //                turn, validates every action through the environment's own
-//                validator, and persists its own trace
+//                validator, and persists its own trace. An execution may name
+//                the agent that runs each turn; with none named, the
+//                deployment's own agent runs
 //   evaluation → `evaluatePersistedRun`, the same mapping the evaluation
 //                endpoint serves
 //
@@ -32,10 +34,9 @@ import 'server-only';
 
 import {
   AgentProviderError,
+  type AgentSelection,
   agentProviderLabel,
-  resolveAgentProvider,
-  resolveBedrockConfiguration,
-  resolveOpenRouterConfiguration,
+  resolveDeployedSelection,
 } from '@/lib/agent/provider';
 import { runTurn, TurnConflictError } from '@/lib/agent/run-turn';
 import { DEFAULT_CONFIGURATION } from '@/lib/business/simulation';
@@ -53,6 +54,7 @@ import { reportBenchmark } from './benchmark';
 import { getBenchmark, validateBenchmarkDefinition } from './catalog';
 import { buildRunMatrix } from './matrix';
 import {
+  type BenchmarkAgentAttribution,
   type BenchmarkAgentConfiguration,
   type BenchmarkCase,
   type BenchmarkDefinition,
@@ -72,6 +74,22 @@ export interface BenchmarkExecutionInput {
   benchmarkVersion?: number | null;
   /** Optional: the agent configuration that ran the benchmark. See below. */
   agent?: BenchmarkAgentConfiguration | null;
+  /**
+   * The agent that runs every case. Omitted, the deployment's own agent runs.
+   *
+   * This is what makes a benchmark comparable: the same definition, the same
+   * scenarios, the same seeds and the same world, run against more than one
+   * agent in one process. The selection reaches exactly one place — the turn —
+   * so the environment, the tools, the objective, the validator and the
+   * persisted trace are identical whichever agent is named here.
+   */
+  selection?: AgentSelection | null;
+  /**
+   * Who the created runs are attributed to. Omitted, they carry no agent
+   * identity — the deployment's own runs are identified by the configuration
+   * the report already records.
+   */
+  attribution?: BenchmarkAgentAttribution | null;
   /** Optional seed override, replacing the definition's declared seed set. */
   seeds?: readonly number[] | null;
 }
@@ -87,12 +105,7 @@ export interface BenchmarkExecutionInput {
  */
 export function resolveDeployedAgentConfiguration(): BenchmarkAgentConfiguration {
   try {
-    const provider = resolveAgentProvider(env);
-    const model =
-      provider === 'openrouter'
-        ? resolveOpenRouterConfiguration(env).modelId
-        : resolveBedrockConfiguration(env).modelId;
-    return { provider, model, label: agentProviderLabel(provider) };
+    return configurationForSelection(resolveDeployedSelection(env));
   } catch (error) {
     if (error instanceof AgentProviderError)
       throw new BenchmarkError(
@@ -104,13 +117,36 @@ export function resolveDeployedAgentConfiguration(): BenchmarkAgentConfiguration
 }
 
 /**
- * Resolve the requested agent configuration, refusing a mismatch.
+ * The configuration an explicit agent selection describes.
  *
- * A caller may name the agent it believes it is benchmarking. The benchmark runs
- * whichever agent this deployment resolves — there is no per-run provider
- * override anywhere in the runtime, and Phase 3 does not add one. So a request
- * that names a different configuration is a contradiction, not an instruction:
- * accepting it would produce a report labelled with an agent that did not run.
+ * A selection is a provider this build can construct a client for plus the model
+ * that client should ask for, so the label is a readable form of the same fact:
+ * a report says the runs came from `openrouter` running that model, and the
+ * provider module remains the only place either name is decided.
+ */
+export function configurationForSelection(selection: AgentSelection): BenchmarkAgentConfiguration {
+  return {
+    provider: selection.provider,
+    model: selection.modelId,
+    label: agentProviderLabel(selection.provider),
+  };
+}
+
+/**
+ * Resolve the requested agent configuration against the deployed one, refusing
+ * a mismatch.
+ *
+ * This is the operator-facing request path: `POST /api/benchmarks/[id]/run` may
+ * name the agent it believes it is benchmarking, and the benchmark runs whichever
+ * agent this deployment resolves. A request that names a different configuration
+ * is a contradiction, not an instruction: accepting it would produce a report
+ * labelled with an agent that did not run.
+ *
+ * The comparison engine is the one caller that runs an agent this deployment is
+ * not configured for. It does so by naming a *selection*, which is resolved by
+ * {@link resolveExecutionAgent} instead — the deployment's own configuration
+ * never enters into it, so this function's rule is not weakened, only scoped to
+ * the requests it governs.
  */
 export function requireAgentConfiguration(
   requested: BenchmarkAgentConfiguration | null | undefined,
@@ -126,6 +162,29 @@ export function requireAgentConfiguration(
 }
 
 /**
+ * The agent configuration an execution will run, and be attributed to.
+ *
+ * An execution either names the agent that runs — a selection, which is what
+ * lets one process run the same benchmark against several agents — or leaves it
+ * to the deployment, in which case the request-path rule applies unchanged. The
+ * contradiction check survives both routes for the same reason: a report may not
+ * be labelled with an agent that did not produce its runs.
+ */
+function resolveExecutionAgent(input: BenchmarkExecutionInput): BenchmarkAgentConfiguration {
+  if (!input.selection) return requireAgentConfiguration(input.agent);
+  const selected = configurationForSelection(input.selection);
+  if (
+    input.agent &&
+    (input.agent.provider !== selected.provider || input.agent.model !== selected.model)
+  )
+    throw new BenchmarkError(
+      'AGENT_CONFIGURATION_MISMATCH',
+      `This execution was asked to run ${selected.provider} with model ${selected.model}; the request named ${input.agent.provider} with model ${input.agent.model}. A benchmark can only be attributed to the agent that actually produced its runs.`,
+    );
+  return selected;
+}
+
+/**
  * Run a benchmark and report on it.
  *
  * Every case is an independent run: its own row, its own world, its own seed,
@@ -133,7 +192,7 @@ export function requireAgentConfiguration(
  */
 export async function executeBenchmark(input: BenchmarkExecutionInput): Promise<BenchmarkResult> {
   const definition = getBenchmark(input.benchmarkId, input.benchmarkVersion ?? null);
-  const agent = requireAgentConfiguration(input.agent);
+  const agent = resolveExecutionAgent(input);
 
   // A seed override produces a different experiment, so it is validated through
   // the same gate the shipped definitions pass — an unsupported or repeated seed
@@ -146,7 +205,15 @@ export async function executeBenchmark(input: BenchmarkExecutionInput): Promise<
   const matrix = buildRunMatrix(effective);
   const runs: BenchmarkRun[] = [];
   for (const cell of matrix) {
-    runs.push(await executeCase({ ownerId: input.ownerId, definition: effective, cell }));
+    runs.push(
+      await executeCase({
+        ownerId: input.ownerId,
+        definition: effective,
+        cell,
+        selection: input.selection ?? null,
+        attribution: input.attribution ?? null,
+      }),
+    );
   }
 
   return reportBenchmark(effective, runs, agent, { declaredSeeds: definition.seeds });
@@ -168,8 +235,9 @@ async function createCaseRun(input: {
   definition: BenchmarkDefinition;
   cell: BenchmarkCase;
   initialization: ScenarioInitialization;
+  attribution: BenchmarkAgentAttribution | null;
 }): Promise<string> {
-  const { cell, definition, initialization, ownerId } = input;
+  const { cell, definition, initialization, ownerId, attribution } = input;
   const state = initialization.state;
   const scenarioEvent = describeScenarioApplication(initialization);
   const created = await prisma.$transaction(async (tx) => {
@@ -209,6 +277,10 @@ async function createCaseRun(input: {
             benchmarkId: definition.id,
             benchmarkVersion: definition.version,
             caseKey: cell.key,
+            // Which agent produced this run. `null` for a run nobody attributed,
+            // which is not the same claim as any particular agent.
+            agentId: attribution?.agentId ?? null,
+            agentVersion: attribution?.agentVersion ?? null,
           }),
         },
         ...(scenarioEvent
@@ -259,13 +331,14 @@ async function driveToTerminal(
   runId: string,
   ownerId: string,
   maxTurns: number,
+  selection: AgentSelection | null,
 ): Promise<string | null> {
   let driverFailure: string | null = null;
   for (let turn = 0; turn < maxTurns; turn += 1) {
     const current = await loadRun(runId, ownerId);
     if (!current || current.status !== 'RUNNING') break;
     try {
-      await runTurn(runId, ownerId);
+      await runTurn(runId, ownerId, { selection });
     } catch (error) {
       if (!(error instanceof TurnConflictError)) {
         driverFailure = DRIVER_FAILURE_REASON;
@@ -290,8 +363,10 @@ async function executeCase(input: {
   ownerId: string;
   definition: BenchmarkDefinition;
   cell: BenchmarkCase;
+  selection: AgentSelection | null;
+  attribution: BenchmarkAgentAttribution | null;
 }): Promise<BenchmarkRun> {
-  const { cell, definition, ownerId } = input;
+  const { cell, definition, ownerId, selection, attribution } = input;
   const configuration = { ...DEFAULT_CONFIGURATION, ...definition.configuration };
   const initialization = initializeScenarioRun({
     environmentKey: definition.environmentKey,
@@ -312,11 +387,12 @@ async function executeCase(input: {
       `Case ${cell.key} resolved to ${resolved ? `${resolved.id}@${resolved.version}` : 'no scenario'}.`,
     );
 
-  const runId = await createCaseRun({ ownerId, definition, cell, initialization });
+  const runId = await createCaseRun({ ownerId, definition, cell, initialization, attribution });
   const driverFailure = await driveToTerminal(
     runId,
     ownerId,
     initialization.configuration.maxTurns,
+    selection,
   );
 
   const persisted = await loadRun(runId, ownerId);

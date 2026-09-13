@@ -1,4 +1,3 @@
-// @polsia:user-owned — starter home served at /. Replace it in place, or delete
 // this route group before adding another page that resolves to /.
 
 import {
@@ -381,12 +380,6 @@ export default function CauselarkHome() {
                     <ArrowUpRight className="transition-transform duration-200 ease-out group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                   </Link>
                 </Button>
-                <a
-                  href="mailto:causelark-6@polsia.app?subject=Causelark%20access"
-                  className="font-mono text-caption text-primary-foreground/75 transition-colors duration-200 hover:text-primary-foreground"
-                >
-                  causelark-6@polsia.app
-                </a>
               </div>
             </CardContent>
           </Card>

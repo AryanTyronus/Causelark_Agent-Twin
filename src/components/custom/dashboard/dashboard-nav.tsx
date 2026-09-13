@@ -1,4 +1,3 @@
-// @polsia:user-owned — Agent Twin's console navigation.
 //
 // Five destinations, in the order the work is actually done: hand an objective to
 // the operator, run a test by hand, read the standardised tests, see which agents

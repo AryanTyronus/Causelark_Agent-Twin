@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — one bounded Agent Twin turn end to end, without a database.
 //
 // The provider is replaced at its own boundary and Prisma by an in-memory store,
 // so this exercises the real pipeline: allow-listed tools → deterministic

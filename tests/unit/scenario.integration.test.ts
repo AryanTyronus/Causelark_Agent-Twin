@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — scenarios across the whole pipeline, without a database.
 //
 // The scenario engine is only useful if the rest of the system accepts a
 // scenario-modified world without knowing it is one. These tests drive the real

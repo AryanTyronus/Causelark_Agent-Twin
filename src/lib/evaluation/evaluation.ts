@@ -1,4 +1,3 @@
-// @polsia:user-owned — the evidence-based evaluation engine.
 //
 // A run is evaluated from what it persisted and nothing else. The environment
 // produces the evidence; this module computes the verdict. It never invokes a

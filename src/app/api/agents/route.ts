@@ -1,4 +1,3 @@
-// @polsia:user-owned — deployment agent configuration catalogue endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

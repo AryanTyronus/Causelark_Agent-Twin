@@ -1,4 +1,3 @@
-// @polsia:user-owned — the deterministic experiment matrix.
 //
 // The matrix is the cross product of the canonical agent list and the benchmark
 // engine's own run matrix, in that nesting order: every agent runs every case of

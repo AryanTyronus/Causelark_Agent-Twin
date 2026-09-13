@@ -1,4 +1,3 @@
-// @polsia:user-owned — the Operator's tool surface.
 //
 // This is the whole of what the Operator can do. Every tool here is an adapter:
 // it validates its arguments, calls one function that already exists in this

@@ -1,4 +1,3 @@
-// @polsia:framework-owned — DO NOT EDIT. Bridges a route handler's 400 body
 // onto react-hook-form so server-side field validation surfaces on the form.
 //
 // ROUTE 400 CONTRACT this consumes (emit exactly one of these from a handler

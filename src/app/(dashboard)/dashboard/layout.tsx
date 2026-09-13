@@ -1,5 +1,3 @@
-// @polsia:user-owned
-
 import type { ReactNode } from 'react';
 import { DashboardShell } from '@/components/custom/dashboard/dashboard-shell';
 

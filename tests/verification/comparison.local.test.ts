@@ -1,4 +1,3 @@
-// @polsia:user-owned — local integration verification for the comparison engine.
 //
 // This harness is NOT part of the unit suite (`npm test` includes only
 // `tests/unit/**`). It runs a real agent comparison against a real PostgreSQL

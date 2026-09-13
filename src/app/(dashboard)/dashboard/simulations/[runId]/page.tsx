@@ -1,4 +1,3 @@
-// @polsia:user-owned — metadata-only run inspector shell.
 import type { Metadata } from 'next';
 import { AgentTwinRunView } from '@/components/custom/agent-twin-run-view';
 

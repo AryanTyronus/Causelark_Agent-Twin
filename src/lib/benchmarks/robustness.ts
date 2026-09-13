@@ -1,4 +1,3 @@
-// @polsia:user-owned — Agent Twin's deterministic robustness metric.
 //
 // The question this answers is narrow and specific: *how much of the score a
 // condition achieved under the baseline environment survives when the

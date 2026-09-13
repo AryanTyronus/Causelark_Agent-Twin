@@ -1,4 +1,3 @@
-// @polsia:user-owned — benchmark aggregation.
 //
 // Everything here is a fold over the EvaluationResults a benchmark's runs
 // produced. Nothing is re-simulated, nothing is asked of a model, and no score

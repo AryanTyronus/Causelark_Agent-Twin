@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the Strands loop, driven deterministically.
 //
 // This is the suite that proves the Operator is an agent rather than a function.
 // Nothing here mocks the SDK: a real `Agent` is constructed over the real tool

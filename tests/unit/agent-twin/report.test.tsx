@@ -1,4 +1,3 @@
-// @polsia:user-owned — the results screen, rendered.
 //
 // The results screen is the most important screen in the product, and the three
 // things it has to get right are the three things asserted here:

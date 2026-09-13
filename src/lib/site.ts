@@ -1,4 +1,3 @@
-// @polsia:framework-owned — DO NOT EDIT. Code installed by polsia/template-next@0.3.0.
 //
 // Centralized site identity for the SEO metadata routes (robots.ts, sitemap.ts,
 // manifest.ts) and the root layout's default Open Graph / Twitter / canonical

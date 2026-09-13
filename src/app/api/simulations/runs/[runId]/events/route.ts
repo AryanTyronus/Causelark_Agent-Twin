@@ -1,4 +1,3 @@
-// @polsia:user-owned — ordered persisted simulation timeline.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

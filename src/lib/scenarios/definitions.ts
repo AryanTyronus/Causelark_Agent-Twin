@@ -1,4 +1,3 @@
-// @polsia:user-owned — the shipped scenario definitions.
 //
 // Definitions are data: an id, a name, a description, a version, and a list of
 // modifiers. Nothing here branches, loops over external input, or reaches a

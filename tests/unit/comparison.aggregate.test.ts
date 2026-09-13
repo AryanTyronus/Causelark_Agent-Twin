@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — per-agent aggregation from benchmark evidence.
 //
 // The aggregation layer is where a comparison could most easily start lying.
 // Two failure modes are specific to it and neither is visible in a passing

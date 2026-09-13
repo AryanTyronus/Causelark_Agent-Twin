@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the adversarial suite.
 //
 // Everything here is an operator behaving badly and the boundary holding. The
 // attempts are made the only way they can be made in production: by a model

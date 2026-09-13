@@ -1,4 +1,3 @@
-// @polsia:user-owned — the Run a Test flow, driven the way an operator drives it.
 //
 // Four things about this flow can be wrong in a way that would matter, and each
 // is asserted here by using the interface rather than by calling its helpers:

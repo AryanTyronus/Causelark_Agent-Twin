@@ -1,5 +1,3 @@
-// @polsia:user-owned — global navigation rendered from src/lib/nav.ts.
-
 'use client';
 
 import { ChevronDown, Menu } from 'lucide-react';

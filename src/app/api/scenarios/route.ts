@@ -1,4 +1,3 @@
-// @polsia:user-owned — scenario catalogue endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

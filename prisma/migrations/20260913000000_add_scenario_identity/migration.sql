@@ -1,4 +1,3 @@
--- @polsia:user-owned — Agent Twin scenario identity.
 -- Forward-only and purely additive: two nullable columns on SimulationRun, no
 -- DROP, no ALTER of an existing column, no backfill, no data migration.
 --

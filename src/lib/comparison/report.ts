@@ -1,4 +1,3 @@
-// @polsia:user-owned — the comparison report, assembled from evidence.
 //
 // `reportComparison` is this engine's pure surface: a resolved experiment plus
 // the benchmark report each agent produced, in, and a `ComparisonReport` out. It

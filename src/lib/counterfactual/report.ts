@@ -1,4 +1,3 @@
-// @polsia:user-owned — the run-level counterfactual report.
 //
 // This module folds one analysis per decision point into a single report and
 // ranks the decisions by what they gave up. The ranking is the answer to "how

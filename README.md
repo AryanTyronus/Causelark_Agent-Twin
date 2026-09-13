@@ -582,5 +582,3 @@ No claim is made that this project has placed, passed, or won anything.
 ## License
 
 MIT. See [LICENSE](./LICENSE).
-
-This repository began from a Polsia application template and retains its scaffold, auth module, ownership metadata, and migration layout. The Agent Twin product surface — simulation environment, agent runtime, tools, validation, persistence, and dashboard — is application code built on top of it.

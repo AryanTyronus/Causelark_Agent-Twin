@@ -1,4 +1,3 @@
-// @polsia:user-owned — fixtures for the Operator's unit tests.
 //
 // Two boundaries in the Operator's path cannot be crossed in a unit test: the
 // database (a run row, a benchmark execution) and the model provider. Everything

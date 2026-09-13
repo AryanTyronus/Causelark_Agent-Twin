@@ -1,4 +1,3 @@
-// @polsia:user-owned — the test plan, and the digest a person authorises.
 //
 // The Operator plans before it executes. The plan is not a message the model
 // writes — it is a record the server builds, every field of which is copied from

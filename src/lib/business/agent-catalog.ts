@@ -1,4 +1,3 @@
-// @polsia:user-owned — the agent configurations this deployment can run.
 //
 // There is no agent registry in this product, and this module does not add one.
 // An agent configuration is the caller's to declare on a run request, and this

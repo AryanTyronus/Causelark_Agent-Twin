@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — head-to-head comparison, robustness, failures and the verdict.
 //
 // These tests pin the properties that make a comparison a measurement rather
 // than a preference:

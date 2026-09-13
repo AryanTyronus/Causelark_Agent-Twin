@@ -1,4 +1,3 @@
-// @polsia:user-owned — authenticated, one bounded Agent Twin turn.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

@@ -1,4 +1,3 @@
-// @polsia:user-owned — counterfactual domain contracts.
 //
 // A counterfactual is a *derived* statement about a run. It is not evidence the
 // environment recorded, and nothing here is ever written back as if it were. A

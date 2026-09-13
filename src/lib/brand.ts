@@ -1,4 +1,3 @@
-// @polsia:user-owned — brand identity. Edit freely. `site.ts` re-exports
 // siteName/siteDescription; `manifest.ts` + `opengraph-image.tsx` read `brandVisual`.
 
 export const siteName = 'Causelark';

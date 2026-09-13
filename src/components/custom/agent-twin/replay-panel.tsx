@@ -1,4 +1,3 @@
-// @polsia:user-owned — the recorded timeline of one run.
 //
 // Replay in this product is not a re-enactment. Every line here is an event the
 // environment recorded while the run was happening, read back in sequence from

@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the comparison API, driven through the real route handlers.
 //
 // The handlers under test are the shipped ones. Authentication is replaced (so a
 // signed-out caller can be simulated) and the execution seam is replaced (so

@@ -1,4 +1,3 @@
-// @polsia:user-owned — shared zod contract for the example resource. Copy this
 // shape for real API resources, then delete the example contract.
 // Keep contract modules client-importable: zod only, no server-only imports.
 import { z } from 'zod';

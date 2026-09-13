@@ -1,5 +1,3 @@
-// @polsia:user-owned — Prisma-to-contract mapping for simulation route handlers.
-
 import 'server-only';
 
 import type {

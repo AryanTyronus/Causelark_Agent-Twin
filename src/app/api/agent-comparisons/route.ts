@@ -1,4 +1,3 @@
-// @polsia:user-owned — owner-scoped comparison experiment catalogue endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

@@ -1,4 +1,3 @@
-// @polsia:user-owned — the counterfactual continuation.
 //
 // A counterfactual is only as good as its answer to "and then what?". This
 // module supplies that answer by replaying the run's own recorded attempts

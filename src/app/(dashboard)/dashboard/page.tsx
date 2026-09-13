@@ -1,4 +1,3 @@
-// @polsia:user-owned — the Agent Twin overview.
 //
 // Four sections, in the order a newcomer needs them: what this is, what has
 // already been run here, what the standardised tests are, and how a test works.

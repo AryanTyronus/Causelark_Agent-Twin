@@ -1,4 +1,3 @@
-// @polsia:user-owned — the agent catalogue.
 //
 // There is no persistent agent registry in this product, and this page does not
 // invent one. What it shows is what the *deployment* can actually construct a

@@ -1,4 +1,3 @@
-// @polsia:user-owned — benchmark execution.
 //
 // This is the only file in `src/lib/benchmarks/` that touches a database, an
 // environment variable or the agent runtime. Everything it composes is an

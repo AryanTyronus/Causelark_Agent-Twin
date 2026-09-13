@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — static guard on the comparison engine's boundary.
 //
 // A comparison earns its authority by what its calculation modules refuse to
 // touch. These assertions read the engine's actual source, so a report that

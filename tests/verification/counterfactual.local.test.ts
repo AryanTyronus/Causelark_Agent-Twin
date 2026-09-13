@@ -1,4 +1,3 @@
-// @polsia:user-owned — local integration verification for the counterfactual engine.
 //
 // This harness is NOT part of the unit suite (`npm test` includes only
 // `tests/unit/**`). It runs the counterfactual analysis against a real PostgreSQL

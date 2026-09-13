@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — what a counterfactual comparison must and must not do.
 //
 // The load-bearing test in this file is the round trip: replayed as an
 // alternative to itself, the recorded choice must reproduce the recorded run

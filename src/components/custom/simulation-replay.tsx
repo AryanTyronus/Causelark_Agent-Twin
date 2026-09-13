@@ -1,4 +1,3 @@
-// @polsia:user-owned — replay controls driven by persisted replay frames.
 'use client';
 
 import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';

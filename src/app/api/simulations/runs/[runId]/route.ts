@@ -1,4 +1,3 @@
-// @polsia:user-owned — owner-scoped simulation run detail endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

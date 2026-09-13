@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — evaluation engine behaviour, determinism and bounds.
 //
 // The engine's whole claim is that a verdict is a pure function of persisted
 // evidence. These tests hold that claim from both ends: scenarios built from

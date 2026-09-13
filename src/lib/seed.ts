@@ -1,4 +1,3 @@
-// @polsia:user-owned — deploy-time database seed. You OWN this file.
 //
 // seed() runs once when the server boots (via the framework-owned
 // src/instrumentation.ts), on the Node server, AFTER the schema is applied. Use it
@@ -12,7 +11,7 @@
 //   1. Make every write IDEMPOTENT — upsert (`where` + `create` + `update`) or
 //      `createMany({ ..., skipDuplicates: true })`, NEVER a bare `create`/`insert`.
 //   2. Keep it fast and small — it runs before the server serves traffic.
-//   3. NOT for recurring work (that's polsia.toml `[[crons]]`) or per-user/
+//   3. NOT for recurring work (that's the deployment scheduler) or per-user/
 //      request-time logic (that's an /api route handler). There is no request here.
 //
 // The template ships an empty seed (a no-op). Fill in the body when your app needs

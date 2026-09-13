@@ -1,4 +1,3 @@
-// @polsia:user-owned — the scenario catalogue.
 //
 // A frozen, in-process registry built once from the shipped definitions. There
 // is no filesystem discovery, no dynamic import and no user-supplied code path:

@@ -1,4 +1,3 @@
-// @polsia:user-owned — owner-scoped benchmark catalogue endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

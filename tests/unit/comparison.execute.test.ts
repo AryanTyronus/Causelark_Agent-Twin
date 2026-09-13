@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — comparison execution: isolation, failure and the provider boundary.
 //
 // This is the comparison pipeline end to end with no database and no provider:
 // Prisma is an in-memory store and the model call is scripted, while everything

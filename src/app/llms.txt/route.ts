@@ -1,4 +1,3 @@
-// @polsia:framework-owned — DO NOT EDIT. Code installed by polsia/template-next@0.3.0.
 //
 // /llms.txt — the endpoint. Next has no metadata route for llms.txt, so this is a
 // plain GET handler serving text/plain; charset=utf-8. Indexing is OPT-IN, exactly

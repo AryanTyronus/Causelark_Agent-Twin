@@ -1,4 +1,3 @@
-// @polsia:user-owned — the comparison result screen.
 //
 // This is the screen that has to answer four questions without the reader
 // knowing anything about the codebase: who performed better, why, under what

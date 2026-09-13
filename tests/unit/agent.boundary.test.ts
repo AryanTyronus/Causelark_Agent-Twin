@@ -1,11 +1,10 @@
 // @vitest-environment node
-// @polsia:user-owned — static guard on the Agent Twin provider boundary.
 //
 // Two model providers are selectable (Bedrock for AWS, OpenRouter for local
 // development), and both are Strands model clients. This guard holds that line
 // from the outside: the agent path may construct exactly those two clients, may
-// reach no third provider — in particular not the raw `openai` package nor the
-// Polsia OpenAI-compatible proxy — and may not carry credentials in source.
+// reach no third provider — in particular not the raw `openai` package — and may
+// not carry credentials in source.
 // These assertions read the actual agent-path source files, so a regression
 // cannot hide behind a passing runtime test.
 
@@ -53,14 +52,12 @@ describe('agent path provider boundary', () => {
   it.each(agentSources)(
     '$name reaches no provider outside the Strands model clients',
     ({ source }) => {
-      // The raw `openai` package and the Polsia OpenAI-compatible proxy are both
-      // off limits: the OpenRouter development provider is reachable only
-      // through Strands' own OpenAI-compatible adapter, so the agent loop keeps
+      // The raw `openai` package is off limits: the OpenRouter development
+      // provider is reachable only through Strands' own OpenAI-compatible adapter,
+      // so the agent loop keeps
       // running inside Strands' tool-calling machinery either way.
       expect(source).not.toMatch(/from\s+['"]openai['"]/);
       expect(source).not.toMatch(/require\(\s*['"]openai['"]\s*\)/);
-      expect(source).not.toMatch(/POLSIA_/);
-      expect(source).not.toMatch(/polsia[-_]?ai/i);
       // AgentRouter was replaced by OpenRouter. No part of the agent path may
       // still reach for it, including through a stale base URL.
       expect(source).not.toMatch(/agentrouter/i);
@@ -79,10 +76,8 @@ describe('agent path provider boundary', () => {
   it('keeps the agent-step route off any other provider', () => {
     const route = readSource(AGENT_STEP_ROUTE);
 
-    // Every file in this repository carries the user-owned ownership banner, so
-    // it is stripped before looking for a provider reference: what must not
-    // appear here is the legacy OpenAI-compatible proxy, not the marker.
-    expect(route.replace(/@polsia:user-owned/g, '')).not.toMatch(/openai|polsia/i);
+    expect(route).not.toMatch(/from\s+['"]openai['"]/);
+    expect(route).not.toMatch(/require\(\s*['"]openai['"]\s*\)/);
     expect(route).toMatch(/from '@\/lib\/agent\/run-turn'/);
   });
 

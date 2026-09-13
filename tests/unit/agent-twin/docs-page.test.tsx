@@ -1,4 +1,3 @@
-// @polsia:user-owned — the console's own documentation page.
 //
 // A documentation page is prose, and prose is not usually worth asserting on.
 // This one is different in a specific way: it is the page a reader consults to

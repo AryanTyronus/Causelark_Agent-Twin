@@ -1,4 +1,3 @@
-// @polsia:user-owned — the benchmark catalogue.
 //
 // A frozen, in-process registry built once from the shipped definitions, in the
 // same shape as the scenario catalogue beside it. There is no filesystem

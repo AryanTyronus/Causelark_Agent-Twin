@@ -1,4 +1,3 @@
-// @polsia:user-owned — live persisted Agent Twin inspector.
 'use client';
 
 import { ExternalLink, RefreshCw, Sparkles } from 'lucide-react';

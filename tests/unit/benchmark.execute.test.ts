@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — benchmark execution end to end, without a database or a provider.
 //
 // The provider is replaced at its own boundary and Prisma by an in-memory store,
 // so this exercises the real pipeline the operator path uses: the scenario

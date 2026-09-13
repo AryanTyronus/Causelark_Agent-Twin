@@ -1,4 +1,3 @@
-// @polsia:framework-owned — DO NOT EDIT. Builds the Permissions-Policy header
 // value applied to every route in next.config.ts.
 //
 // SECURITY POSTURE (platform decision — not the agent's to change):

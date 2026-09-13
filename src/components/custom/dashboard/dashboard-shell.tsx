@@ -1,4 +1,3 @@
-// @polsia:user-owned — the Agent Twin console shell.
 //
 // A header that says what the product is, a nav for the five destinations, and
 // the signed-in operator named once. Everything else is the page's. The

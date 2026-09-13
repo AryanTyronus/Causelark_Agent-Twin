@@ -1,4 +1,3 @@
-// @polsia:user-owned — comparison metric directions.
 //
 // A head-to-head needs to know which way is up. That is the one thing this
 // module states, and it states it as data rather than as branching scattered

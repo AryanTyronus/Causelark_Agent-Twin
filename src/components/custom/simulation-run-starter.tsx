@@ -1,4 +1,3 @@
-// @polsia:user-owned — interactive deterministic simulation workspace.
 'use client';
 
 import {

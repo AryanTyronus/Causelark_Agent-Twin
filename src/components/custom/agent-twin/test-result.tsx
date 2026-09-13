@@ -1,4 +1,3 @@
-// @polsia:user-owned — the result page for one experiment.
 //
 // A comparison report is not persisted, so this page can only show a result that
 // this browser session still holds. When it holds one, the page says where it

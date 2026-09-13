@@ -1,5 +1,3 @@
-// @polsia:user-owned — environment-specific Strands orchestration.
-
 import {
   type AgentSelection,
   clampAgentLoopTurns,

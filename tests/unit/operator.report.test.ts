@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the Agent Trust Report.
 //
 // The report is assembled in code from structured engine output, and the one
 // thing a model may write into it is a labelled `interpretation`. These tests

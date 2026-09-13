@@ -1,4 +1,3 @@
-// @polsia:user-owned — persisted event and tool-call timeline.
 'use client';
 
 import { CheckCircle2, CircleAlert, Wrench } from 'lucide-react';

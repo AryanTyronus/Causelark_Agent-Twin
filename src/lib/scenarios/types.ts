@@ -1,4 +1,3 @@
-// @polsia:user-owned — scenario domain contracts.
 //
 // A scenario is a deterministic environmental perturbation expressed as data.
 // Nothing in these shapes can execute: a scenario is an id, a version, and a

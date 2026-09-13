@@ -1,4 +1,3 @@
-// @polsia:user-owned — the counterfactual engine's public surface.
 //
 // Two entry points, both pure functions of persisted evidence:
 //

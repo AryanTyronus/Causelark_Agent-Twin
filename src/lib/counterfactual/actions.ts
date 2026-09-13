@@ -1,4 +1,3 @@
-// @polsia:user-owned — the counterfactual action space.
 //
 // A counterfactual needs a decision space: the set of actions the agent could
 // have taken instead. The environment publishes that set, so this module does

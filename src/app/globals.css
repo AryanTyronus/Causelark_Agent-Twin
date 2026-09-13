@@ -1,24 +1,5 @@
-/* @polsia:shared scaffold — the agent's ONLY authority here is the SEED inside
- * the `brand_tokens` slot. Everything else (the @theme namespaces, the
- * framework-DERIVED color block, @layer base/components, @custom-variant dark)
- * is FRAMEWORK STRUCTURE — do not edit it.
- *
- * Tailwind 4 is CSS-first (no tailwind.config.js). Seed -> derived model: the
- * agent sets a handful of values in the slot (brand hue/chroma/lightness,
- * radius, fonts); the framework DERIVES the full --brand-50..900 ramp + every
- * semantic role (background/foreground/card/primary/border/...) + dark mode
- * from that seed via oklch(). So editing ONE value (--brand-h) recolors the
- * WHOLE site coherently. Out-of-range seed values are rejected at commit time.
- * Dark mode is class-based: next-themes toggles `.dark` on <html>.
- *
- * Derivation runs at runtime via oklch(calc()) (evergreen browsers). If wider
- * support is needed, pre-compute the derived block to literal oklch at install.
- */
-
 @import "tailwindcss";
 @import "tw-animate-css";
-/* @polsia:user-owned entrypoint — agents add custom global CSS in custom-style.css, not here. */
-@import "./custom-style.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -118,12 +99,6 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* === BEGIN polsia-slot:brand_tokens === */
-/* THE SEED — the agent's only styling authority on this file.
-   Set the brand HUE (and optionally chroma/lightness), the radius, and the
-   fonts. The framework derives the full --brand ramp + every surface/text/
-   border role + dark mode from these (see the derived block below), so editing
-   --brand-h ALONE recolors the entire site. Keep values in range. */
 :root {
   --brand-h: 42; /* brand hue, 0–360 */
   --brand-c: 0.17; /* brand chroma (saturation), 0–0.3 */
@@ -133,7 +108,6 @@
   --font-display: "Space Mono", ui-monospace, monospace;
   --font-body: "IBM Plex Sans", ui-sans-serif, sans-serif;
 }
-/* === END polsia-slot:brand_tokens === */
 
 /* FRAMEWORK-DERIVED — NOT agent-editable (outside the slot). The full ramp,
    every semantic role, and dark mode are computed from the seed above. Neutrals

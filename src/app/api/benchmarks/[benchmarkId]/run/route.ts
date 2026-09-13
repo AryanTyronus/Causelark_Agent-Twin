@@ -1,4 +1,3 @@
-// @polsia:user-owned — benchmark execution endpoint.
 //
 // The body may name the agent the caller believes it is benchmarking and may
 // override the definition's seed set. It may not carry scenarios, thresholds,

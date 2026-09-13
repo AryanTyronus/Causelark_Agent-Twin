@@ -1,4 +1,3 @@
-// @polsia:user-owned — counterfactual analysis of a persisted run.
 //
 // This is the only file in `src/lib/counterfactual/` that touches anything
 // outside the process's own memory, and it touches exactly two seams:

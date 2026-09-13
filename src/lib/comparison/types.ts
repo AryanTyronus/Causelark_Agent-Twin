@@ -1,4 +1,3 @@
-// @polsia:user-owned — comparison domain contracts.
 //
 // An agent comparison is a declarative experiment: one benchmark, held fixed,
 // run against several agent configurations. These schemas describe the shipped

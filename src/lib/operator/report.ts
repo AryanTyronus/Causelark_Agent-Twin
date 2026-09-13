@@ -1,4 +1,3 @@
-// @polsia:user-owned — the Agent Trust Report, assembled deterministically.
 //
 // The report is built here, in code, from the structured results the operator's
 // tools already recorded. That is the entire design: the model decides *what to

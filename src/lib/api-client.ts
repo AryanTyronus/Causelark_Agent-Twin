@@ -1,4 +1,3 @@
-// @polsia:framework-owned — DO NOT EDIT. The ONLY data transport for client
 // pages. Native fetch only. Do NOT add SWR/react-query/axios for app data —
 // the data plane is apiFetch + zod contracts (see src/lib/contracts/). Client
 // pages call apiFetch('/api/<resource>'); route handlers under src/app/api own

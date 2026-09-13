@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — benchmark definitions, catalogue and run matrix.
 //
 // The matrix is the contract every other part of the engine rests on: if it is
 // not the same array on every call, nothing above it can be reproducible. These

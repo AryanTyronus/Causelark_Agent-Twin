@@ -1,4 +1,3 @@
-// @polsia:user-owned — app navigation rendered by SiteNav/SiteFooter and read by
 // the sitemap. Edit it as pages are added or removed.
 // This list is a convenience, not module registration.
 

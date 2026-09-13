@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — static guard on the evaluation engine's boundary.
 //
 // An evidence-based evaluator earns its verdict by what it refuses to touch.
 // These assertions read the engine's actual source, so a score that quietly

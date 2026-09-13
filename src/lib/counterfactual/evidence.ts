@@ -1,4 +1,3 @@
-// @polsia:user-owned — the counterfactual evidence set.
 //
 // This is the only place in the engine where a synthetic evaluation input is
 // built, and it is the most consequential module in it: everything the evaluator

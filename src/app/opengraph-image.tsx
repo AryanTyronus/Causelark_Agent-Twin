@@ -1,4 +1,3 @@
-// @polsia:framework-owned — DO NOT EDIT. Code installed by polsia/template-next@0.3.0.
 //
 // Open Graph / Twitter image — name + colors come from `brandVisual.og` in src/lib/brand.ts.
 import { ImageResponse } from 'next/og';

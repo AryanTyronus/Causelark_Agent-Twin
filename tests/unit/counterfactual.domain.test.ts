@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the counterfactual engine's domain layer.
 //
 // These tests pin the three derivations the analysis rests on: the action space
 // the environment actually admits, the decision points read out of a persisted

@@ -1,4 +1,3 @@
-// @polsia:user-owned — the benchmark report, assembled from evidence.
 //
 // `reportBenchmark` is the whole of Phase 3's pure surface: a benchmark
 // definition plus the runs it produced, in, and a `BenchmarkResult` out. It is a

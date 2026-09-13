@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — scenario engine behaviour, determinism and bounds.
 //
 // The engine's claim is that a scenario is a deterministic, validated, purely
 // declarative perturbation of the world the environment would have built. These

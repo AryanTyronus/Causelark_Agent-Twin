@@ -1,4 +1,3 @@
-// @polsia:user-owned — the route for one experiment's result.
 //
 // The segment is the experiment's id, so a result is addressable by the test it
 // came from rather than by an opaque run identifier. In Next 16 a dynamic

@@ -1,4 +1,3 @@
-// @polsia:user-owned — the scenario modifier engine.
 //
 // One pure function per modifier kind, keyed by kind in a frozen record. There
 // is no `switch` to extend and no `eval`-like escape hatch: a modifier is data,

@@ -1,4 +1,3 @@
-// @polsia:user-owned — deterministic benchmark test fixtures.
 //
 // Real evaluation results here would mean running real simulations, which would
 // make an aggregation test a test of the simulation engine instead of a test of

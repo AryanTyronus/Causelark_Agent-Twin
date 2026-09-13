@@ -1,4 +1,3 @@
-// @polsia:user-owned — one operator request, from a validated request to a run state.
 //
 // The split from `operator.ts` is deliberate. `operator.ts` knows about Strands:
 // an `Agent`, a `Model`, an invocation and its limits. This file knows about a

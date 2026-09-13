@@ -1,4 +1,3 @@
-// @polsia:user-owned — authenticated simulation catalogue endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

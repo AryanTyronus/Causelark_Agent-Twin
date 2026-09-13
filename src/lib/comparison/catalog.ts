@@ -1,4 +1,3 @@
-// @polsia:user-owned — the experiment catalogue.
 //
 // A frozen, in-process registry built once from the shipped templates, in the
 // same shape as the benchmark and scenario catalogues beside them. There is no

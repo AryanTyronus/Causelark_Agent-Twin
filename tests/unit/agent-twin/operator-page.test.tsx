@@ -1,4 +1,3 @@
-// @polsia:user-owned — the Operator console, driven the way a person drives it.
 //
 // The console is where the operator becomes a product rather than an engine, and
 // three of this phase's claims are only true if they are true *here*:

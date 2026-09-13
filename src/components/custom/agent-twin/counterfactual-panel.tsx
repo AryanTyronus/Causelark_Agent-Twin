@@ -1,4 +1,3 @@
-// @polsia:user-owned — the counterfactual drill-down.
 //
 // "Why did this happen?" is answered by the counterfactual engine, and by
 // nothing else. Every number, every verdict word and every sentence in this

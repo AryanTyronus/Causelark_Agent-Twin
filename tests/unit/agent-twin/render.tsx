@@ -1,4 +1,3 @@
-// @polsia:user-owned — a dependency-free renderer for the Agent Twin UI tests.
 //
 // The console's components are the product the user actually touches, so they
 // are tested by rendering them — not by asserting on helper functions beside

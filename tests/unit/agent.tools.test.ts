@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — allow-listed Agent Twin tools and deterministic validation.
 //
 // These exercise the real Strands tool objects through their public `invoke`
 // entry point. No model is involved: the point is that the tool surface alone

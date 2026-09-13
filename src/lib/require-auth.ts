@@ -1,4 +1,3 @@
-// @polsia:framework-owned - DO NOT EDIT. Code installed by polsia/modules/better-auth. Drift = commit rejected.
 //
 // Server-side auth gate for any signed-in user (analogue of require-admin.ts).
 // Use in API route handlers serving per-user data; copyable example at

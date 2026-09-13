@@ -1,4 +1,3 @@
-// @polsia:user-owned — one benchmark case, opened up.
 //
 // A case row is where a comparison stops being a table and becomes a record. The
 // details grid states only what the run itself recorded — which agent, which

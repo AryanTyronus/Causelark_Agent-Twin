@@ -42,7 +42,7 @@ perturbation of that baseline, applied before the run exists (see Scenarios).
   locally before AWS credentials are available, and so a different model can be
   exercised without changing the agent runtime. Nothing else in
   `src/lib/agent/**` constructs a model client, and no agent-path module imports
-  the raw `openai` package or the Polsia AI proxy.
+  the raw `openai` package.
 - Provider selection is `AGENT_PROVIDER`: `bedrock` (default) or `openrouter`.
   It is explicit and never falls back — an unrecognised value fails the turn with
   a visible configuration error rather than quietly running the other provider.
@@ -1137,11 +1137,3 @@ own, and never with a parameter that names an owner. A change to what a rule
 grades or where a threshold sits is a change to what
 `observed-evidence-thresholds-v1` means, so it arrives as a new named methodology
 rather than as an edit under the old name.
-
-## Legacy surface
-
-The framework's own `ai` module (`src/lib/ai/client.ts`,
-`src/app/api/ai/chat/route.ts`) still calls the Polsia AI proxy and reads
-`POLSIA_AI_BASE_URL` / `POLSIA_API_KEY` / `POLSIA_API_TOKEN`. It is unrelated to
-the Agent Twin and is intentionally left in place; the Agent Twin path does not
-import it.

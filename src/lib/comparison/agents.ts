@@ -1,4 +1,3 @@
-// @polsia:user-owned — agent identity and configuration canonicalisation.
 //
 // The whole of this module exists to answer one question exactly: are these two
 // agent configurations the same configuration? A comparison that got that wrong

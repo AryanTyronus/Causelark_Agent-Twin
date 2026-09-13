@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — agent identity, configuration canonicalisation and the matrix.
 //
 // These are the assertions that keep a comparison honest about *who* it
 // compared. If two configurations collapse into one key, two agents share a

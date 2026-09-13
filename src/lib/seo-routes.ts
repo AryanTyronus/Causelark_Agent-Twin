@@ -1,4 +1,3 @@
-// @polsia:user-owned — programmatic SEO URLs for /sitemap.xml: dynamic [slug]
 // pages (e.g. /champions/[slug]) that aren't in the nav menu. Edit this file,
 // never src/app/sitemap.ts (framework-owned). Return one entry per page with an
 // app-absolute `path` ('/...'); may be async to fetch data. Return [] if none.

@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — provider selection between Bedrock and OpenRouter.
 //
 // OpenRouter is the development provider; Bedrock stays the intended AWS one.
 // These tests hold the selection contract itself: which provider a given

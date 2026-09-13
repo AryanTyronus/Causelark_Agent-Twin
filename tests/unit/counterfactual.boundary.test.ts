@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — static guard on the counterfactual engine’s boundary.
 //
 // A counterfactual earns its credibility by what it refuses to reach for. These
 // assertions read the engine's actual source, so a branch that quietly started

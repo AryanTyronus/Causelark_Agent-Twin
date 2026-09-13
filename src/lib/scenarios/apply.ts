@@ -1,4 +1,3 @@
-// @polsia:user-owned — deterministic scenario application.
 //
 // `applyScenario` is the single entry point that turns a baseline world plus a
 // scenario definition into the world a run will actually start in. It is a pure

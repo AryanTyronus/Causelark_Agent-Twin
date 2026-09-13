@@ -1,4 +1,3 @@
-// @polsia:user-owned — raw metric extraction for the evaluation engine.
 //
 // This module only reads evidence. It scores nothing, mutates nothing, and
 // touches no database, provider or clock: every value below is either a field

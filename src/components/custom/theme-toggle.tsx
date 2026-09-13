@@ -1,5 +1,3 @@
-// @polsia:user-owned — light/dark theme toggle. Reusable; mounted in SiteNav.
-
 'use client';
 
 import { Moon, Sun } from 'lucide-react';

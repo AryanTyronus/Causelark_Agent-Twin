@@ -1,4 +1,3 @@
-// @polsia:user-owned — operator domain contracts.
 //
 // The Operator is an agent that *uses* the deterministic engines; it is not one
 // of them. These schemas describe what a person asks it for, what it is allowed

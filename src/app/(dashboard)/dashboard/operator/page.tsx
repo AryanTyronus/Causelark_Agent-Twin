@@ -1,4 +1,3 @@
-// @polsia:user-owned — the Operator destination.
 //
 // A page in the existing console rather than an application beside it: the same
 // shell, the same navigation, the same panels. The operator is a new way to ask

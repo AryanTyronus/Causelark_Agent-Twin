@@ -1,4 +1,3 @@
-// @polsia:user-owned — one decision point, analysed against every alternative.
 //
 // This module answers the two questions the phase exists for, at the scale of a
 // single decision:

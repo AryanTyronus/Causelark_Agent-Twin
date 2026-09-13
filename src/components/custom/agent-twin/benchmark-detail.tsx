@@ -1,4 +1,3 @@
-// @polsia:user-owned — one benchmark, read as a specification.
 //
 // The page answers the questions a reader has before trusting a number: which
 // conditions, at which versions, at which seeds, what robustness is a retention

@@ -1,4 +1,3 @@
-// @polsia:user-owned — the comparison engine's public surface.
 //
 // The same shape as the benchmark engine's barrel: the domain contracts, the
 // pure modules that derive a report from evidence, and the catalogue. The

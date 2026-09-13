@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — static guard on the benchmark engine's boundary.
 //
 // A benchmark earns its numbers by what its calculation modules refuse to touch.
 // These assertions read the engine's actual source, so a score that quietly

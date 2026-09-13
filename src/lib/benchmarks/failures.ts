@@ -1,4 +1,3 @@
-// @polsia:user-owned — deterministic failure classification over persisted runs.
 //
 // This module reads the evaluation engine's own metric set and the run's own
 // status. It re-simulates nothing, replays nothing, and asks no model anything:

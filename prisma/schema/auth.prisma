@@ -1,4 +1,3 @@
-// @polsia:framework-owned - DO NOT EDIT. Code installed by polsia/modules/better-auth@0.3.0. Drift = commit rejected.
 //
 // better-auth (v1.6.x) core models for the Prisma adapter — verbatim shape
 // emitted by `npx @better-auth/cli generate`, plus admin plugin fields on

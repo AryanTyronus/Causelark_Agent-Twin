@@ -1,4 +1,3 @@
-// @polsia:user-owned — per-agent aggregation.
 //
 // Everything here is a fold over the benchmark engine's own report for one
 // agent. Nothing is re-simulated, nothing is asked of a model, and no score is

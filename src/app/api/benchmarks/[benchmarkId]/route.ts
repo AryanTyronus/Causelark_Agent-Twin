@@ -1,4 +1,3 @@
-// @polsia:user-owned — one benchmark in full.
 //
 // The catalogue endpoint lists how large each benchmark is; this one answers what
 // a benchmark is. It is the smallest adapter that makes a benchmark page possible:

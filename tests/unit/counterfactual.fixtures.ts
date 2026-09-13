@@ -1,4 +1,3 @@
-// @polsia:user-owned — deterministic counterfactual test fixtures.
 //
 // These fixtures do not mock the environment. Every trace below is folded
 // through the *real* deterministic transition engine — `createInitialSimulationState`

@@ -1,4 +1,3 @@
-// @polsia:user-owned — the overview, rendered.
 //
 // The overview is the first screen of the product, and the only screen that has
 // to answer "what is this" before it answers anything else. Three properties

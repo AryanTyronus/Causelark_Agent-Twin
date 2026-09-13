@@ -1,4 +1,3 @@
-// @polsia:user-owned — benchmark domain contracts.
 //
 // A benchmark is a declarative experiment: an environment, an ordered set of
 // scenario conditions, a seed set, and the agent configuration that ran it.

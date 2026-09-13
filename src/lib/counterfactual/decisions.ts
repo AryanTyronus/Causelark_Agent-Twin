@@ -1,4 +1,3 @@
-// @polsia:user-owned — decision points, read out of persisted evidence.
 //
 // A decision point is not a concept the environment persists; it is read out of
 // the trace. Every action the run recorded is a moment where something chose one

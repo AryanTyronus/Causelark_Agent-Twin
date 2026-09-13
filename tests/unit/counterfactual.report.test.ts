@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the run-level counterfactual report.
 //
 // The report is what an operator reads, so these tests are about its internal
 // consistency and about it not overstating what it measured: every count either

@@ -1,4 +1,3 @@
-// @polsia:user-owned — the shipped comparison experiment templates.
 //
 // A template is data. It names the benchmark an experiment runs, the seeds it
 // uses, and the bounds on how many agents may be compared. It carries no

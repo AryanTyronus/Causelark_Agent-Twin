@@ -1,4 +1,3 @@
-// @polsia:user-owned — per-app content for /llms.txt (route.ts is
 // framework-owned). Applied only when the deploy is indexable (SEO_INDEXABLE).
 //
 // The SHAPE (types) is framework-owned in src/lib/llms.ts; here you declare the

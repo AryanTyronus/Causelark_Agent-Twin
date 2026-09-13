@@ -1,4 +1,3 @@
-// @polsia:user-owned — the reference for the product experience.
 //
 // The console's own documentation: what a test is, what each engine does, what
 // the interface promises about provenance, and what it deliberately refuses to

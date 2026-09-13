@@ -1,4 +1,3 @@
-// @polsia:user-owned — the execution view.
 //
 // A test drives real model turns, so it takes real time, and the one thing this
 // view must not do is pretend otherwise.

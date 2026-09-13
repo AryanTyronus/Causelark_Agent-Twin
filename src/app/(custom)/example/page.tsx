@@ -1,4 +1,3 @@
-// @polsia:user-owned — worked client data-plane example. Copy the shape for a
 // real resource, then delete this page.
 'use client';
 

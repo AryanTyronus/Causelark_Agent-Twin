@@ -1,4 +1,3 @@
-// @polsia:user-owned — the shipped benchmark definitions.
 //
 // A benchmark definition is data. It names an environment, an ordered list of
 // scenario references pinned to exact versions, an ordered seed set, and the

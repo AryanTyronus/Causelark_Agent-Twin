@@ -1,4 +1,3 @@
-// @polsia:user-owned — the route for one benchmark.
 //
 // The benchmark id is the path segment and the version is an optional query
 // parameter, because a benchmark id is stable while its versions accumulate.

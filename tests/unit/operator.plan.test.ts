@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the plan, and the digest a person authorises.
 //
 // The plan is the boundary between what an operator may imagine and what this
 // deployment can actually run. These tests are about one property: that every

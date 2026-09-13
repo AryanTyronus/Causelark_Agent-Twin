@@ -1,4 +1,3 @@
-// @polsia:user-owned — local integration verification for the benchmark engine.
 //
 // This harness is NOT part of the unit suite (`npm test` includes only
 // `tests/unit/**`). It exists to run the twelve-step local verification against

@@ -1,5 +1,3 @@
-// @polsia:framework-owned — DO NOT EDIT.
-// Code installed by polsia/template-next. Datasource + generator blocks only.
 // Data modules drop their own prisma/schema/<module>.prisma files alongside
 // this one. Do NOT redeclare datasource or generator in any module file.
 

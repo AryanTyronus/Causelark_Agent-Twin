@@ -1,4 +1,3 @@
-// @polsia:user-owned — root error boundary; REPLACES the layout, so it renders its own
 // <html>/<body> with inline styles (theme/providers unavailable). Restyle or delete.
 
 'use client';

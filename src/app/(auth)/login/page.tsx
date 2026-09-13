@@ -1,5 +1,3 @@
-// @polsia:user-owned — seeded by polsia/modules/better-auth; restyle freely.
-
 import { SignInForm } from '@/components/custom/sign-in-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 

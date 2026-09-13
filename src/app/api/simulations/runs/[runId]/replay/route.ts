@@ -1,4 +1,3 @@
-// @polsia:user-owned — persisted replay reconstruction endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

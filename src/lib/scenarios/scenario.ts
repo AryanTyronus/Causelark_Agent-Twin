@@ -1,4 +1,3 @@
-// @polsia:user-owned — the scenario engine's public surface.
 //
 // `initializeScenarioRun` is the one seam between the environment and the
 // scenario engine: it builds the world the environment would have built, then

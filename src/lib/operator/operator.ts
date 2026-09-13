@@ -1,4 +1,3 @@
-// @polsia:user-owned — the Strands Operator.
 //
 // This is where the agent actually is. A Strands `Agent` is constructed over the
 // tool surface `tools.ts` builds and a `Model` resolved through the provider

@@ -1,4 +1,3 @@
-// @polsia:user-owned — same-configuration, same-seed environment rerun endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

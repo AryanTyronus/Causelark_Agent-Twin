@@ -1,4 +1,3 @@
-// @polsia:user-owned — deterministic comparison test fixtures.
 //
 // Real per-agent reports here would mean running real simulations, which would
 // make a comparison test a test of the simulation engine rather than of the

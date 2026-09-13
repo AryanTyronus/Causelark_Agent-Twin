@@ -1,4 +1,3 @@
-// @polsia:user-owned — deterministic Agent Twin domain coverage.
 // Provider calls are intentionally not made in unit tests; Amazon Bedrock and
 // the AWS credential provider chain are an external boundary, exercised by the
 // request-driven route against real credentials.

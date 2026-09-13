@@ -1,4 +1,3 @@
-// @polsia:user-owned — the Operator prompt.
 //
 // The prompt is the operator's working agreement. Everything it may do is
 // stated, and — more importantly — everything it may *not* say is stated, because

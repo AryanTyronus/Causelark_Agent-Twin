@@ -1,4 +1,3 @@
-// @polsia:user-owned — persisted-record simulation metrics endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

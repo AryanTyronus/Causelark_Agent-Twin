@@ -1,4 +1,3 @@
-// @polsia:user-owned — observable state presentation.
 'use client';
 
 import { BatteryCharging, Droplets, Package, ShieldAlert, WalletCards } from 'lucide-react';

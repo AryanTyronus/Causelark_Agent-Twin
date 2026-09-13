@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the scenario layer's borders, pinned statically.
 //
 // The scenario engine is supposed to be a small, inert, deterministic layer
 // wedged between the environment and the agent. That property is easy to lose

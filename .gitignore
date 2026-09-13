@@ -1,4 +1,4 @@
-# Polsia Next.js template — gitignore (Node + Next.js + tools)
+# Causelark Agent Twin — gitignore
 
 # Dependencies
 node_modules/
@@ -42,5 +42,6 @@ lerna-debug.log*
 # Vercel
 .vercel
 
-# Polsia upgrade reconcile sidecars (never commit)
+# Legacy framework sidecars/metadata (never commit)
 *.polsia-app-old
+.polsia/

@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the Operator's tool surface.
 //
 // These exercise the real Strands tool objects through the SDK's own `invoke`
 // entry point, with no model anywhere in the loop. What they are checking is the

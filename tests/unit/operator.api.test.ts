@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — POST /api/operator, driven through the real route handler.
 //
 // The handler under test is the shipped one. Authentication is replaced (so a
 // signed-out caller can be simulated) and the *operator itself* is replaced —

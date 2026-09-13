@@ -1,4 +1,3 @@
-// @polsia:user-owned — exact decimal arithmetic for benchmark reporting.
 //
 // Every quantity a benchmark averages is already an integer: the evaluation
 // engine rounds each category score and the overall score to 0–100 before it

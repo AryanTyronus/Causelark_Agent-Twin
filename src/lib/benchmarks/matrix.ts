@@ -1,4 +1,3 @@
-// @polsia:user-owned — the deterministic benchmark run matrix.
 //
 // The matrix is the cross product of the definition's scenario list and its
 // seed list, in that nesting order: every scenario runs at every seed, and the

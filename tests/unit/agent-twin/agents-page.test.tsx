@@ -1,4 +1,3 @@
-// @polsia:user-owned — the agents page.
 //
 // This page answers one question — what can this deployment actually run? — and
 // the product's answer is deliberately narrow: there is no agent registry, and

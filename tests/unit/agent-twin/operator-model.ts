@@ -1,4 +1,3 @@
-// @polsia:user-owned — a deterministic stand-in for the operator's model.
 //
 // The Operator is a Strands agent, and the phase it belongs to exists to prove
 // that. Proving it in a test suite therefore has to drive the *real* loop — the

@@ -1,4 +1,3 @@
-// @polsia:framework-owned — DO NOT EDIT. Code installed by polsia/template-next@0.3.0. Drift = commit rejected.
 //
 // shadcn standard cn() helper. Every shadcn primitive imports this.
 

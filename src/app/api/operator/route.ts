@@ -1,4 +1,3 @@
-// @polsia:user-owned — POST /api/operator.
 //
 // The operator's only entry point. It authenticates, validates the request
 // against the shared contract, hands it to the server composition and maps what

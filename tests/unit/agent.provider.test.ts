@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — Amazon Bedrock provider boundary coverage.
 //
 // The Strands SDK and the Bedrock model client are mocked at the provider
 // boundary: these tests never construct an AWS client, never resolve

@@ -1,5 +1,3 @@
-// @polsia:user-owned — pure deterministic resource-management environment.
-
 import {
   SimulationActionInput,
   type SimulationActionInput as SimulationActionInputType,

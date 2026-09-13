@@ -1,4 +1,3 @@
-// @polsia:user-owned — deterministic scoring for the evaluation engine.
 //
 // Five dimensions, each normalized to 0–100, then combined with the weights
 // below. The weights are exported constants and are echoed into every result,

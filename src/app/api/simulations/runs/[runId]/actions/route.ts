@@ -1,4 +1,3 @@
-// @polsia:user-owned — compatible manual/operator action endpoint.
 import 'server-only';
 
 import type { Prisma } from '@prisma/client';

@@ -1,4 +1,3 @@
-// @polsia:user-owned — deterministic simulation persistence. The auth User is
 // referenced by scalar ownerId only; do not add a relation to the locked model.
 //
 // `scenarioId` / `scenarioVersion` record the scenario a run was created under,

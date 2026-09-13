@@ -1,5 +1,3 @@
-// @polsia:user-owned — server shell for the client-fetched simulation workspace.
-
 import type { Metadata } from 'next';
 import { SimulationRunStarter } from '@/components/custom/simulation-run-starter';
 

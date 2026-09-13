@@ -1,4 +1,3 @@
-// @polsia:user-owned — head-to-head comparison and the verdict.
 //
 // Everything here compares numbers the benchmark engine already produced. No
 // measurement is taken here, no agent is asked anything, and no judgement enters

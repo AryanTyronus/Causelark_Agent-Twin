@@ -1,5 +1,3 @@
-// @polsia:user-owned — server-side metrics derived only from persisted records.
-
 import {
   type SimulationActionRecord,
   type SimulationEvent,

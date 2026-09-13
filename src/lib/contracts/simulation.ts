@@ -1,4 +1,3 @@
-// @polsia:user-owned — client/server contracts for the observable simulation.
 // This module is deliberately free of server, Prisma, and provider imports.
 
 import { z } from 'zod';

@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the pure half of the Agent Twin interface.
 //
 // Three things in this layer can be wrong in a way that would matter, and each
 // is asserted here as a statement about the product:

@@ -1,4 +1,3 @@
-// @polsia:user-owned — what this browser remembers about a test it ran.
 //
 // A comparison report is deliberately not persisted. Nothing about it is state:
 // the runs it was derived from are the evidence, and a stored copy of a report

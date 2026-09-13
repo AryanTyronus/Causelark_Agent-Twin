@@ -1,4 +1,3 @@
-// @polsia:user-owned — comparison execution endpoint.
 //
 // The body names the agents to compare and may override the benchmark's seed
 // set. It may not carry scenarios, thresholds, scoring rules, weights or

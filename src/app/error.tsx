@@ -1,5 +1,3 @@
-// @polsia:user-owned — route error boundary (Client Component). Restyle or delete.
-
 'use client';
 
 import { Button } from '@/components/ui/button';

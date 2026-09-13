@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — benchmark aggregation, degradation and failure analysis.
 //
 // Everything here is a pure fold over evaluation results, so the fixtures supply
 // the scores directly and the assertions are arithmetic. No simulation runs, no

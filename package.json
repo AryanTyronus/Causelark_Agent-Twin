@@ -1,8 +1,8 @@
 {
-  "name": "polsia-app-template",
+  "name": "causelark-agent-twin",
   "version": "0.3.12",
   "private": true,
-  "description": "Polsia Next.js template with the shadcn UI baseline built in",
+  "description": "Causelark Agent Twin — a simulation and evaluation environment for autonomous AI agents",
   "engines": {
     "node": ">=22.0.0"
   },

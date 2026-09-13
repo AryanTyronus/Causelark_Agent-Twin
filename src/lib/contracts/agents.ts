@@ -1,4 +1,3 @@
-// @polsia:user-owned — agent configuration contracts for the Agent Twin UX.
 //
 // An agent has no registry in this product, and this file does not invent one.
 // An agent configuration is what the comparison engine already accepts on a run

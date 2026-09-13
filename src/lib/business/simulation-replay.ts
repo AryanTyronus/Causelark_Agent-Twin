@@ -1,5 +1,3 @@
-// @polsia:user-owned — deterministic replay reconstruction from persisted records.
-
 import {
   type SimulationActionRecord,
   type SimulationEvent,

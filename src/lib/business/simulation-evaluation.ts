@@ -1,4 +1,3 @@
-// @polsia:user-owned — persisted run → evaluation verdict.
 //
 // The mapping from a stored run row to `EvaluationInput` lives here, in one
 // place, because three callers need it and they must not drift: the evaluation

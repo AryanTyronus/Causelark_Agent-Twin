@@ -1,4 +1,3 @@
-// @polsia:user-owned — how much autonomy the Operator is given, and why.
 //
 // An autonomous agent that a person points at a benchmark is an agent that can
 // spend money. The bounds below are the whole of its allowance, they are

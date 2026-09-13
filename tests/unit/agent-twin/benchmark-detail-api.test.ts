@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the benchmark detail adapter, driven through the real route.
 //
 // The benchmark catalogue endpoint lists benchmarks; it does not describe one.
 // The detail route added in this phase is a read-only projection of the compiled

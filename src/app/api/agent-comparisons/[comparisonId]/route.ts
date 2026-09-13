@@ -1,4 +1,3 @@
-// @polsia:user-owned — comparison experiment plan endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

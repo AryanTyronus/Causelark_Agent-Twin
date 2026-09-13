@@ -1,4 +1,3 @@
-// @polsia:user-owned — Agent Twin presentation primitives.
 //
 // The product's claim is that a result is evidence, so the UI has to be able to
 // say where a number came from. These are the small, shared pieces that do that:

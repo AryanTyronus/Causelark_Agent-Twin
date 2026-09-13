@@ -1,4 +1,3 @@
-// @polsia:user-owned — seeded by polsia/modules/better-auth; restyle freely.
 'use client';
 
 import Link from 'next/link';

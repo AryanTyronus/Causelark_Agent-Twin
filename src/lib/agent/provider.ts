@@ -1,4 +1,3 @@
-// @polsia:user-owned — replaceable Strands provider boundary.
 //
 // Agent Twin execution runs on the official Strands Agents TypeScript SDK. Two
 // model providers are selectable, explicitly, through `AGENT_PROVIDER`:

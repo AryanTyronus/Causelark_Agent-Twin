@@ -1,4 +1,3 @@
-// @polsia:user-owned — the Operator console.
 //
 // One page, three questions in the order a person asks them: what do I want to
 // know, what is about to run, and what did it find. Everything below the request

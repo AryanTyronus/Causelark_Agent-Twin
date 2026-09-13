@@ -1,4 +1,3 @@
-// @polsia:user-owned — evaluation domain contracts.
 //
 // The evaluation engine turns persisted simulation evidence into a verdict.
 // These schemas describe that verdict; they are isomorphic (no database, no

@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the deployment-readiness methodology.
 //
 // `assessReadiness` is a pure function of a benchmark result, which is what makes
 // it testable in isolation and what makes it auditable in production. Every test

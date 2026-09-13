@@ -1,5 +1,3 @@
-// @polsia:user-owned — safe, observable agent boundary.
-
 import { z } from 'zod';
 import { SimulationActionInput, SimulationState } from '@/lib/contracts/simulation';
 

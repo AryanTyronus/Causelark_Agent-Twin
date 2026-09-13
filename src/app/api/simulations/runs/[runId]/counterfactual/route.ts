@@ -1,4 +1,3 @@
-// @polsia:user-owned — counterfactual analysis endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

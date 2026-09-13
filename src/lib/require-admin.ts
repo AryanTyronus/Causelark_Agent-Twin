@@ -1,4 +1,3 @@
-// @polsia:framework-owned - DO NOT EDIT. Code installed by polsia/modules/better-auth. Drift = commit rejected.
 //
 // Server-side admin gate. Admin = a better-auth user with role 'admin' (the admin
 // plugin in src/lib/auth.ts). Use at the TOP of an admin Server Component page:

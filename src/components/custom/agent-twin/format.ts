@@ -1,4 +1,3 @@
-// @polsia:user-owned — how Agent Twin renders a number.
 //
 // Formatting only. Nothing in this module computes a metric, re-derives a score,
 // or decides which value is better — every number it formats arrives already

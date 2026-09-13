@@ -1,4 +1,3 @@
-// @polsia:user-owned — the deployment-readiness methodology.
 //
 // The question this module answers is "is this agent ready to deploy?", and the
 // honest answer is that there is no universal threshold for it. What there is,

@@ -1,4 +1,3 @@
-// @polsia:user-owned — the benchmark catalogue and one benchmark's page.
 //
 // A benchmark is this product's claim of standardisation, so both pages are
 // tested for the thing that claim rests on: that what they describe is the

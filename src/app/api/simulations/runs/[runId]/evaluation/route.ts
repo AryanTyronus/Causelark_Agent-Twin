@@ -1,4 +1,3 @@
-// @polsia:user-owned — persisted-record evaluation endpoint.
 import 'server-only';
 
 import { NextResponse } from 'next/server';

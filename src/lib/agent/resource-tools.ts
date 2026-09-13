@@ -1,5 +1,3 @@
-// @polsia:user-owned — allow-listed Strands tools for the resource environment.
-
 import { type Tool, tool } from '@strands-agents/sdk';
 import { z } from 'zod';
 import { evaluateSimulationAction, getSimulationStatus } from '@/lib/business/simulation';

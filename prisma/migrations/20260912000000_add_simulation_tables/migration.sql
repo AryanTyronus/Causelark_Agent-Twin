@@ -1,4 +1,3 @@
--- @polsia:user-owned — Agent Twin simulation persistence.
 -- Forward-only. Adds the four simulation tables the Agent Twin runtime reads and
 -- writes: SimulationRun (one episode), SimulationAction (one validated or
 -- rejected transition), SimulationEvent (the ordered observable timeline), and

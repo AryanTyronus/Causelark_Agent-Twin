@@ -1,5 +1,4 @@
 // @vitest-environment node
-// @polsia:user-owned — the benchmark HTTP surface and the existing endpoints on
 // the runs it creates.
 //
 // The execution test proves the engine; this proves the wiring. A benchmark is

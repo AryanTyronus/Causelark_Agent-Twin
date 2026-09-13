@@ -1,4 +1,3 @@
-// @polsia:user-owned — reference route handler. Copy this shape for real
 // resources, then delete the example route.
 import 'server-only';
 import { NextResponse } from 'next/server';

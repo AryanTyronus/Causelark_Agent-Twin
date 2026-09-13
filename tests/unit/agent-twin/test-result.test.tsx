@@ -1,4 +1,3 @@
-// @polsia:user-owned — the result page, rendered.
 //
 // A comparison report is deliberately not persisted, so this page has three
 // distinct things to say and must never blur them:

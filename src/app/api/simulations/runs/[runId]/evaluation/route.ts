@@ -2,20 +2,8 @@
 import 'server-only';
 
 import { NextResponse } from 'next/server';
-import { DEFAULT_CONFIGURATION } from '@/lib/business/simulation';
-import {
-  loadRun,
-  toAction,
-  toEvent,
-  toScenarioIdentity,
-  toToolCall,
-} from '@/lib/business/simulation-persistence';
-import {
-  SimulationConfiguration,
-  SimulationRunStatus,
-  SimulationState,
-} from '@/lib/contracts/simulation';
-import { evaluateRun } from '@/lib/evaluation/evaluation';
+import { evaluatePersistedRun } from '@/lib/business/simulation-evaluation';
+import { loadRun } from '@/lib/business/simulation-persistence';
 import { EvaluationEnvelope } from '@/lib/evaluation/types';
 import { requireAuth, type SessionUser } from '@/lib/require-auth';
 
@@ -36,24 +24,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ runId: s
   const run = await loadRun(runId, user.id);
   if (!run) return NextResponse.json({ error: 'Run not found' }, { status: 404 });
 
-  const evaluation = evaluateRun({
-    runId: run.id,
-    status: SimulationRunStatus.parse(run.status),
-    state: SimulationState.parse(run.state),
-    initialState: SimulationState.parse(run.initialState ?? run.state),
-    actions: run.actions.map(toAction),
-    events: run.events.map(toEvent),
-    toolCalls: run.toolCalls.map(toToolCall),
-    budgetLimit: run.budgetLimit,
-    turnCount: run.turnCount,
-    maxTurns:
-      run.maxTurns ||
-      SimulationConfiguration.parse(run.configuration ?? DEFAULT_CONFIGURATION).maxTurns,
-    terminationReason: run.terminationReason,
-    // Context, not input to a score: it lets a verdict be labelled with the
-    // condition it was measured under.
-    scenario: toScenarioIdentity(run),
-  });
+  // One mapping, shared with benchmark execution, so a benchmark case and an
+  // operator-opened run are scored from identical inputs.
+  const evaluation = evaluatePersistedRun(run);
 
   return NextResponse.json(
     EvaluationEnvelope.parse({ evaluation, inProgress: run.status === 'RUNNING' }),

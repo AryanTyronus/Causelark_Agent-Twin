@@ -15,6 +15,11 @@ perturbation of that baseline, applied before the run exists (see Scenarios).
   under. It is data plus pure functions — no database, provider, clock,
   randomness or filesystem access — and it modifies a world only by returning a
   new one, through the environment's own contracts and constants.
+- `src/lib/benchmarks/` owns the benchmark definitions and the arithmetic that
+  turns a set of persisted evaluations into an aggregate report. Nine of its ten
+  modules are as pure as the two layers above; `execute.ts` is the one declared
+  integration seam, and it is the only file in the layer that may import a
+  database, an environment variable or the agent runtime (see Benchmarks).
 - `src/lib/agent/provider.ts` is the replaceable provider boundary. The runtime
   uses the official Strands Agents TypeScript SDK with one of two selectable
   model clients, both from that SDK: `BedrockModel`
@@ -261,6 +266,210 @@ same evidence is identical whether or not a scenario is attached, and the
 metadata exists so a score can be labelled with the condition it was measured
 under. Phase 2 adds no scenario-specific scoring and no robustness score.
 
+## Benchmarks
+
+A benchmark answers a question the single-run layers cannot: *how robust is an
+autonomous agent across controlled environmental conditions?* One scenario says
+how an agent behaved under one condition; a benchmark runs the same agent across
+every condition, scores each run with the existing evaluation engine, and
+reports what changed.
+
+The pipeline is:
+
+```
+Benchmark definition → Scenario selection → Deterministic run matrix
+  → Simulation runs → Persisted evidence → Existing evaluation engine
+  → Benchmark aggregation → Robustness report
+```
+
+**A benchmark definition is data, never code.** It is an id (lower-kebab), an
+integer version, a name, a description, an `environmentKey`, an `objectiveKey`,
+an ordered list of `{ id, version }` scenario references, an ordered list of
+seeds, and an optional partial configuration override. It carries no function,
+no expression and no threshold, so it can be serialised, diffed and compared.
+Definitions live in `definitions.ts` and are compiled into a frozen registry in
+`catalog.ts`; `getBenchmark(id, version)` resolves against that registry and
+throws `UNKNOWN_BENCHMARK` otherwise. There is no filesystem discovery and no
+way for a caller to submit a definition — an id supplied through the API can
+only ever resolve to a benchmark that shipped with the code. An id that exists
+at another version fails with a message naming the version the catalogue does
+ship, rather than falling back to it.
+
+`resource-routing-robustness@1` is the shipped benchmark: the `resource-routing`
+environment, the `complete-delivery` objective, all seven shipped scenarios at
+their pinned version `1`, and one seed (`1042`). One seed is enough to make the
+structure and the arithmetic verifiable; the matrix is a cross product, so a
+wider seed set is a data change rather than an architectural one.
+
+**The run matrix is the experiment.** `buildRunMatrix` expands scenarios × seeds
+with scenarios as the outer loop and seeds as the inner, both in the order the
+definition declares them — never in object-iteration order, and a boundary test
+asserts the module contains no `Object.keys`/`values`/`entries`. Each cell is
+identified by `benchmarkCaseKey(scenarioId, version, seed)` — `"resource-scarcity@1#1042"`
+— which is stable regardless of the cell's position, so a case can be matched to
+its run without depending on ordering. The matrix is sized to
+`MAX_BENCHMARK_CASES = 28` (seven scenarios × `MAX_BENCHMARK_SEEDS = 4`); a
+larger definition is refused rather than silently truncated.
+
+**Execution reuses every existing seam.** `executeBenchmark` resolves the
+definition, validates each scenario reference through the scenario catalogue,
+builds the matrix, and then runs each cell sequentially:
+
+| Step | Existing seam it uses |
+| --- | --- |
+| Build the perturbed world | `initializeScenarioRun` before the row exists |
+| Create the run | the same `SimulationRun` columns and the same `simulation.started` → `scenario.applied` → `observation.created` sequence `POST /api/simulations/runs` writes |
+| Advance the agent | `runTurn`, the one bounded turn loop, which claims its own turn and persists its own trace |
+| Validate actions | `evaluateSimulationAction`, through the tools, unchanged |
+| Score the run | `evaluatePersistedRun`, the same mapping the evaluation endpoint serves |
+
+It creates no second simulation engine, manipulates no simulation state, and
+never re-simulates a completed run to produce a number. The benchmark's own
+identity is added to the run's `simulation.started` payload (`benchmarkId`,
+`benchmarkVersion`, `caseKey`) so a run can be traced back to the experiment that
+produced it; no benchmark identity is written into the scenario columns.
+
+**Each case is an independent experiment.** Every cell gets its own run row, its
+own seed, its own freshly-initialised world and its own scenario. No mutable
+environment object is carried between cases, and the definition is never
+mutated. The loop is sequential in this phase — reproducibility matters more than
+throughput — but nothing above it assumes that, so a later phase can parallelise
+it without changing a contract.
+
+**A failing case does not fail the benchmark.** Each case carries an explicit
+status — `COMPLETED`, `LIMIT_REACHED`, `RUNNING`, `TIMEOUT`, `FAILED`, `ERROR`,
+`UNAVAILABLE` — which is aggregated three ways: *succeeded*
+(`COMPLETED`/`LIMIT_REACHED` — a limit is an intended outcome, matching the
+evaluation engine's own rule), *unsuccessful* (`FAILED`/`TIMEOUT`/`ERROR`) and
+*unavailable* (`UNAVAILABLE`). A provider failure or a timeout stays visible as
+its own count, its own event and its own failure class; it is never converted
+into a zero-score success. `RUNNING` is reported as in progress rather than as a
+failure it did not record. A case whose evaluation is partial — a timeout — is
+still scored, because the evaluation engine's partial semantics are the
+authority on what its evidence supports.
+
+### Aggregation
+
+Aggregation is a deterministic fold over the collected `EvaluationResult`s.
+Counts are exact. Score averages are computed in integer **hundredths** —
+`roundDivide(sum, count, 2)` with half away from zero — so no intermediate value
+is ever a float and no rounding happens silently inside a mean. The precision is
+the exported constant `BENCHMARK_METRIC_PRECISION = 2`; a value that is not
+reported at that precision is not computed at it either.
+
+The report carries `scenarioCount`, `seedCount`, `totalCases`, `completedCases`,
+`failedCases`, `timeoutCases`, `errorCases` and `evaluatedCases`, and, over the
+evaluated cases only, `averageOverallScore`, `minimumOverallScore`,
+`maximumOverallScore` and the five per-dimension averages
+(`averageTaskScore`, `averageSafetyScore`, `averageEfficiencyScore`,
+`averageResourceScore`, `averageReliabilityScore`). **An absent measurement is
+`null`, never `0`** — a dimension no run produced evidence for is reported as
+absent, because zero is a score and absence is not one. A `UNAVAILABLE` case
+stays counted in the totals and stays out of the averages.
+
+### Robustness
+
+The robustness metric measures **preservation of performance across scenario
+changes** — deliberately not the average score. A benchmark whose scores are
+uniformly mediocre is not robust; a benchmark that scores well everywhere is.
+The metric is versioned `baseline-retention-v1` and its formula is exported as
+named logic in `robustness.ts` rather than buried in constants:
+
+```
+baselineScore       = mean overall score of the baseline scenario's evaluated cases
+scenarioScore       = mean overall score of that scenario's evaluated cases
+degradation         = baselineScore − scenarioScore           (absolute)
+relativeDegradation = degradation / baselineScore
+retention           = scenarioScore / baselineScore           (capped at 1)
+robustnessScore     = mean retention over every non-baseline scenario with evidence
+```
+
+Three properties are deliberate:
+
+- **Retention is capped at one.** A scenario that scores *better* than the
+  baseline is genuinely interesting — it is reported as a negative degradation
+  with a negative relative degradation — but it does not let one easy condition
+  pay for a collapsed one in the aggregate.
+- **The baseline is not averaged into its own metric.** It is the reference, so
+  including it would pull every robustness score toward one.
+- **A baseline of zero yields no robustness score.** Retention against a zero
+  baseline is undefined, so the report states `ZERO_BASELINE` as an explicit
+  `unavailableReason` rather than dividing by zero or inventing `1`.
+  The other unavailable reasons are `MISSING_BASELINE`,
+  `NO_EVALUATED_BASELINE`, `NO_PERTURBED_SCENARIOS` and `NO_EVALUATED_SCENARIOS`.
+
+The report also carries `averageScenarioScore`, `worstScenarioScore`,
+`averageDegradation` and `worstDegradation`. **This is Agent Twin's current
+deterministic robustness metric. It is not a universal scientific quantity**,
+and it is documented as its own definition rather than as a standard measure.
+
+Degradation is additionally broken out per scenario: one row per declared
+scenario, in the definition's own scenario order, carrying `scenarioId`,
+`scenarioVersion`, `score`, `baselineScore`, `absoluteDegradation`,
+`relativeDegradation`, the five dimension scores and `runStatus`. A scenario
+that produced no evidence reports `null` scores rather than zeros. The report
+names `worstScenario`, `bestNonBaselineScenario` and `greatestDegradation`, and
+every tie is broken by the benchmark definition's scenario order — so the answer
+is a property of the experiment, not of how a set happened to iterate.
+
+### Failure analysis
+
+Failure analysis counts what the persisted evidence actually supports, in six
+classes: `taskFailure`, `safetyViolation`, `invalidActions`, `providerFailures`,
+`toolFailures` and `timeouts`. Each class reads one named metric the evaluation
+engine already derived from the trace — `objectiveReached`,
+`riskThresholdExceeded`, `rejectedAttempts`, `agentErrors`, `failedToolCalls`,
+and the run's terminal status respectively — and each finding carries the `runId`
+and `caseKey` it came from. There is no LLM, no inference from agent text, and no
+causal claim the evidence cannot establish: a case that merely scored badly is
+not classified as a failure, and a class with no evidence is reported as zero
+rather than left out. The full event trace is not duplicated into the benchmark
+result; the result references the runs, and the trace stays where it was
+persisted.
+
+### Result contract and persistence
+
+A `BenchmarkResult` is `{ benchmark, configuration, summary, dimensions,
+robustness, scenarios, failures, agent }` — the definition's identity, the
+scenario/seed/configuration set that actually ran, the aggregate counts and
+scores, the robustness report, the per-scenario degradation table and the failure
+analysis. It is reported with `BenchmarkResult.parse`, so a malformed report
+fails loudly rather than being served.
+
+The result is **a deterministic function of persisted evaluations plus the
+benchmark definition** — nothing else. It reads no clock and no randomness; the
+only variable is the model's own decisions, which are labelled variable
+everywhere else in this document too.
+
+**Nothing about a benchmark is persisted.** No `BenchmarkResult` is stored, and
+the schema is unchanged: storing an aggregate would duplicate evidence that is
+already in the run rows and let the copy drift from it, exactly as a stored
+verdict would. A benchmark's identity survives through the runs it created —
+their owner, their scenario, their seed, and the benchmark fields on their
+`simulation.started` payload. A benchmark-created run is an ordinary run: it
+replays, re-evaluates and reruns through the existing endpoints, and a rerun
+still pins the scenario version the original recorded.
+
+### API
+
+| Endpoint | Serves |
+| --- | --- |
+| `GET /api/benchmarks` | The catalogue as summaries — id, version, name, description, environment key, scenario count — with no modifier internals |
+| `POST /api/benchmarks/<benchmarkId>/run` | Executes the benchmark and returns the `BenchmarkResult` |
+
+The run endpoint accepts only an optional `agent` label and an optional `seeds`
+list; it carries no scenario, no threshold and no scoring input, and it cannot
+submit a definition. It authenticates through the project's own `requireAuth`,
+resolves the benchmark from the server-side registry, refuses an unknown id
+(`404`), an unknown scenario version (`409`), a seed the environment does not
+publish (`400`) and an agent configuration this deployment does not run
+(`400`), and creates every run scoped to the signed-in owner. A requested agent
+configuration that names a different provider or model is refused rather than
+accepted as a label, because a benchmark can only be attributed to the agent that
+actually produced its runs. The engine stays provider-agnostic: it never imports
+a model client and never branches on which provider is configured, and it names
+the deployed configuration by asking the provider boundary once.
+
 ## Persistence
 
 Simulation tables are app-owned. They are created by forward-only, purely
@@ -268,7 +477,9 @@ additive user-owned migrations
 (`prisma/migrations/20260912000000_add_simulation_tables`, then
 `prisma/migrations/20260913000000_add_scenario_identity`, which adds the two
 nullable scenario columns to `SimulationRun`); the framework-owned better-auth
-migrations and `migration_lock.toml` are untouched.
+migrations and `migration_lock.toml` are untouched. The benchmark layer adds no
+migration at all: it stores nothing of its own, and the runs it creates are
+ordinary runs in the tables above.
 
 ## Extension points
 
@@ -279,7 +490,11 @@ new environment is scorable once its evidence is recorded — but a dimension th
 cannot be derived from persisted data must be omitted rather than guessed at.
 New environmental conditions belong in the scenario catalogue as declarative
 modifiers over the environment's published constants, not as special cases inside
-the environment or the agent runtime.
+the environment or the agent runtime. New benchmarks belong in the benchmark
+definition list as data — an environment, an objective, scenario references and
+seeds — and a new *kind* of robustness metric belongs as a new named formula
+beside `baseline-retention-v1`, versioned and documented, rather than as a change
+to what the existing one means.
 
 ## Legacy surface
 

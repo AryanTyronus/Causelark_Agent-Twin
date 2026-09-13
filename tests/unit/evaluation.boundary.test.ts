@@ -15,6 +15,11 @@ const EVALUATION_DIR = fileURLToPath(new URL('../../src/lib/evaluation', import.
 const EVALUATION_ROUTE = fileURLToPath(
   new URL('../../src/app/api/simulations/runs/[runId]/evaluation/route.ts', import.meta.url),
 );
+// The one mapping from a stored run row to evaluation input, shared with the
+// benchmark engine so the two paths cannot score the same run differently.
+const PERSISTED_MAPPING = fileURLToPath(
+  new URL('../../src/lib/business/simulation-evaluation.ts', import.meta.url),
+);
 
 const evaluationFiles = readdirSync(EVALUATION_DIR)
   .filter((entry) => entry.endsWith('.ts'))
@@ -101,8 +106,14 @@ describe('evaluation route', () => {
   });
 
   it('computes the verdict rather than storing one', () => {
-    expect(route).toMatch(/evaluateRun\(/);
+    // The route goes through the one shared mapping from a stored run row to
+    // evaluation input, which the benchmark engine also uses — so a benchmark
+    // case and an operator-opened run cannot be scored from different inputs.
+    expect(route).toMatch(/from '@\/lib\/business\/simulation-evaluation'/);
+    expect(route).toMatch(/evaluatePersistedRun\(/);
     expect(route).not.toMatch(/prisma\./);
+    // The mapping itself is still the engine's entry point, unmoved.
+    expect(readFileSync(PERSISTED_MAPPING, 'utf8')).toMatch(/evaluateRun\(/);
   });
 
   it('declares the dynamic runtime and the envelope contract', () => {

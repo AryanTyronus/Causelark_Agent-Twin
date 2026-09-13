@@ -291,12 +291,16 @@ Latest local verification, on the current working tree:
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Tests | `npm run test` | 433 tests passing (20 test files) |
-| Lint | `npm run lint` | Passing (164 files checked) |
+| Tests | `npm run test` | 621 tests passing (25 test files) |
+| Lint | `npm run lint` | Passing (186 files checked) |
 | Build | `npm run build` | Passing |
 | Typecheck | `npm run typecheck` | Passing |
 
-Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, the evaluation engine's scoring, determinism, purity and bounds, and the scenario engine — its catalogue, each shipped scenario, validation and refusal, immutability, determinism, modifier ordering and versioning, plus its boundaries (no clock, randomness, provider, database or dynamic discovery) and its integration across run creation, persistence, trace, agent tools, replay and evaluation. Migration deployment was verified separately against a fresh disposable PostgreSQL database: all four migrations apply, including the simulation tables and the scenario-identity columns, with no schema drift.
+Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, the evaluation engine's scoring, determinism, purity and bounds, the scenario engine — its catalogue, each shipped scenario, validation and refusal, immutability, determinism, modifier ordering and versioning — and the benchmark engine: its declarative definitions and registry, the deterministic run matrix, execution through the real simulation/agent/persistence path, aggregation, the robustness metric, the degradation table, failure analysis, the HTTP surface, and the boundaries of every calculation module (no clock, randomness, provider, database, network or dynamic discovery).
+
+The benchmark engine is additionally verified against a real PostgreSQL database by a separate harness that is deliberately **not** part of `npm test`: `npx vitest run --config vitest.verification.config.ts`. It runs the full twelve-step local verification — resolution, matrix, execution, isolation, scenario identity, evaluation, failure visibility, aggregate determinism, robustness arithmetic, replay and rerun — against a disposable database, with only the model provider stubbed. It creates real runs and does not remove them, so point it at a throwaway database.
+
+Migration deployment was verified separately: all four migrations apply cleanly to a fresh disposable PostgreSQL database, `prisma migrate status` reports the schema up to date, and `prisma migrate diff` is empty in both directions — no schema drift.
 
 The evaluation engine was additionally exercised against the runs persisted in a local development database — including one agent-driven run that reached `COMPLETED` and one that terminated `TIMEOUT` — to confirm it evaluates real evidence without re-simulation and returns identical verdicts on repeated evaluation. That check is not part of the suite, which stays independent of any database.
 
@@ -318,12 +322,15 @@ Separately, during scenario-engine verification (2026-09-13) the OpenRouter key 
 - Evidence-based evaluation engine: five weighted dimensions scored from persisted evidence, with no LLM judge, no randomness, no clock and no mutation of the simulation
 - Scenario & adversarial engine: seven versioned, declarative environmental conditions applied deterministically before a run starts, with per-field change records and no new scoring
 - Scenario identity persisted with each run and recorded as a `scenario.applied` system event, with reruns pinned to the recorded version
+- Benchmark & robustness engine: a declarative, versioned benchmark definition (`resource-routing-robustness@1`) resolved from a frozen server-side registry, expanded into a deterministic scenarios × seeds run matrix, executed through the existing simulation, scenario, agent, persistence and evaluation seams, and aggregated into a deterministic `BenchmarkResult` — including a documented retention-based robustness metric (`baseline-retention-v1`), a per-scenario degradation table and an evidence-based failure analysis
+- `GET /api/benchmarks` serving the benchmark catalogue, and `POST /api/benchmarks/<benchmarkId>/run` executing a benchmark and returning the report
 - `GET /api/scenarios` serving the catalogue, and an optional `scenarioId` on run creation
 - `GET /api/simulations/runs/<runId>/evaluation` serving the verdict alongside the raw metric set behind it
 - Dashboard run starter and run inspector
 - Provider error classification, with no credential or raw-response persistence
-- Local verification gates green: 433 tests, lint, production build, typecheck
+- Local verification gates green: 621 tests, lint, production build, typecheck
 - Migration deployment verified against a fresh disposable PostgreSQL database, with no schema drift
+- Benchmark execution verified end-to-end against a disposable PostgreSQL database, with only the model provider stubbed
 
 ### Provider verification
 
@@ -340,9 +347,10 @@ OpenRouter has been exercised end-to-end against a live endpoint. A separate liv
 
 None of the following is implemented. They are listed to mark direction, not capability:
 
-- LLM-generated or automatically discovered scenarios, and a scenario editor UI
-- Batch benchmark execution, cross-run comparison, and pass/fail thresholds built on the evaluation scores
-- A robustness score across conditions, and scenario-specific scoring
+- LLM-generated or automatically discovered scenarios and benchmarks, and a scenario or benchmark editor UI
+- Cross-run and cross-model comparison, and pass/fail thresholds built on the evaluation scores
+- Scenario-specific scoring, and robustness metrics beyond `baseline-retention-v1`
+- Parallel benchmark execution — the current runner is sequential by design
 - Counterfactual and branching simulations that fork a run from a checkpoint
 - Agent benchmarking across models and configurations on fixed seeds, and a comparison dashboard
 - Additional professional environments beyond resource routing

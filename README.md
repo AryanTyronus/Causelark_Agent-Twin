@@ -1,433 +1,272 @@
-# polsia-next-v2
+# Causelark / Agent Twin
 
-The canonical Next.js template for Polsia-generated customer apps.
+**Causelark is a crash-test facility for autonomous AI agents.** Agent Twin is the product: a deterministic digital-twin simulation environment where an autonomous agent can operate, make decisions, and fail safely — before any of it touches a real-world system.
 
-This repository is a scaffold with the shadcn UI baseline built in. It ships the
-framework defaults every app needs on day one: Next.js 16 App Router, React 19,
-Tailwind 4, Prisma client wiring, Biome, Vitest, security headers, a token-driven
-theme, and a broad shadcn primitive set. Product capabilities such as auth,
-billing, email, analytics, dashboards, and multi-tenant workflows are installed
-from `Polsia-Inc/modules`.
+Agent Twin places a real autonomous agent inside a simulated operational environment and lets it run a bounded decision loop: observe the world, decide, call a tool, request an action, have that action validated against the environment's rules, watch the state change, and observe again. Every step is persisted — the observation the agent saw, the tool it called, the action it requested, whether validation accepted or rejected it, and what the world looked like afterwards. The result is a complete, replayable trace of autonomous behaviour rather than a chat transcript.
 
-## What This Is
+The environment itself is deterministic. Given the same seed and the same sequence of actions, the simulated world transitions to exactly the same state, every time. That property is what makes the trace replayable and the agent's decisions auditable: the environment is reproducible, so any difference between two runs is attributable to the agent, not to the world it ran in. The model's decisions are not deterministic and are not claimed to be — the contract distinguishes the two explicitly, marking the transition engine `deterministic` and the provider decision path `variable`.
 
-This is a template, not a hand-customized starter app. The Polsia engineering
-agent reads the ownership map, installs modules when needed, and edits only the
-bounded app-owned zones. The directory shape and `.polsia/ownership.json` are
-the contract that keeps framework files, module files, and customer code
-separate.
+Agent Twin is built on the Strands Agents TypeScript SDK, with model providers behind a single abstraction boundary. Amazon Bedrock is the intended production provider; AgentRouter is a development provider that lets the agent loop run locally before AWS credentials exist. Both drive the same agent loop, the same allow-listed tools, and the same validation, persistence, metrics and replay path — only the model client differs.
 
-The canonical template id is `polsia-next-v2`; the GitHub repository is
-`Polsia-Inc/template-next`.
+## Why Agent Twin?
 
-## What Is Included
+Autonomous agents are increasingly given the ability to act: to spend budget, allocate resources, mutate state, and take irreversible steps. The usual way to gain confidence in that behaviour is to deploy it and watch. That is an expensive way to discover failure modes, and for a system with real consequences it is the wrong order of operations.
 
-- Next.js 16 App Router, React 19, TypeScript, and Tailwind 4.
-- shadcn UI baseline: `components.json`, `cn()`, a committed primitive set in
-  `src/components/ui/**`, sonner toasts, next-themes, and theme tokens in
-  `src/app/globals.css`.
-- Prisma 6 client setup: `prisma/schema/_base.prisma`, `prisma.config.ts`, and
-  the server-only singleton in `src/lib/db.ts`. The actual database is external;
-  Polsia provisions Postgres and injects `DATABASE_URL`.
-- Typed environment validation through `src/lib/env.ts`.
-- Data-plane examples: a shared zod contract, an `/api/example` route handler,
-  and a client page that uses `apiFetch`.
-- CSP and security headers in `proxy.ts`, `next.config.ts`, and
-  `src/lib/csp.ts`.
-- SEO plumbing: `src/lib/brand.ts`, `src/lib/site.ts`, `robots.ts`,
-  `sitemap.ts`, `manifest.ts`, a default Open Graph image route, and an
-  `/llms.txt` route (llmstxt.org) for AI/LLM crawlers curated via
-  `src/lib/llms-config.ts`.
-- Unit tests covering the ownership map, CSP posture, env validation, and the
-  example data contract.
+Agent Twin inverts it. The agent runs first, in a world where a bad decision costs nothing but a recorded trace. The environment applies real constraints — budget, per-resource capacity, risk thresholds, permissions, terminal states — so the agent cannot simply be told "no" by a harness that is more permissive than reality. Actions are validated the way a production system would validate them, and rejected actions are recorded with the reason they were rejected.
 
-## What Is Not Included
+This matters for three practical reasons:
 
-- No auth, billing, email, analytics, dashboards, or other product modules.
-- No database server, Dockerfile, compose file, or Procfile.
-- No real env files. `.env.example` documents the expected variables; deploys
-  receive actual values from the platform.
-- No Server Actions. Product pages call `/api/*` route handlers through
-  `src/lib/api-client.ts`.
+- **Safety.** An agent can be observed making decisions, including wrong ones, without any of those decisions reaching a real system.
+- **Auditability.** Because the environment is deterministic and every step is persisted, a run can be replayed frame by frame and traced back to the exact observation and tool call that produced a decision.
+- **Comparability.** A fixed environment with a fixed seed is a fair test bed: the same scenario can be run against different models, prompts, or agent configurations, and the difference in behaviour is the model's, not the world's.
 
-## Ownership Model
+## How It Works
 
-Always read `.polsia/installed.json`, `.polsia/ownership.json`, and
-`.polsia/overrides.json` before editing.
-
-| Tier | Examples | Who edits |
-| --- | --- | --- |
-| `framework_owned` | `src/lib/db.ts`, `src/lib/utils.ts`, `components.json`, `prisma.config.ts`, `AGENTS.md`, `.polsia/installed.json`, `.polsia/ownership.json` | Framework or owning module only. |
-| `user_owned` | `src/components/ui/**`, `src/app/(setup)/page.tsx`, `src/app/(custom)/**`, `src/lib/brand.ts`, `src/lib/nav.ts`, `public/**`, `README.md`, `.polsia/overrides.json` | The app agent or customer. |
-| `shared` | `src/app/globals.css`, `src/lib/env.ts`, `src/app/layout.tsx`, `proxy.ts`, `next.config.ts`, `package.json`, `.env.example` | Edit only through declared slots or the documented merge strategy. |
-
-`.polsia/ownership.json` is the source of truth. Source banners are reader
-signage only.
-
-## What Not To Edit
-
-- Anything marked `framework_owned` in `.polsia/ownership.json`.
-  Comment-capable source files carry `@polsia:framework-owned` banners as
-  signage, but the ownership map is the authority.
-- Anything outside declared slot markers in shared files such as
-  `next.config.ts`, `proxy.ts`, `src/lib/env.ts`, `src/app/layout.tsx`, and
-  `src/app/globals.css`.
-- `.polsia/installed.json` and `.polsia/ownership.json`. They are generated
-  state files. Use `.polsia/overrides.json` for hand-editable module policy.
-
-## Platform Rules
-
-- Keep Cache Components off unless the platform explicitly changes that policy.
-- Use `proxy.ts`; do not add `middleware.ts`.
-- Keep data and mutations behind `/api/*` route handlers. Do not add Server
-  Actions.
-- Keep Prisma datasource and generator declarations in `prisma/schema/_base.prisma`.
-  App or module schema files add models only.
-- `src/app/(auth)/**` and `src/app/(dashboard)/**` pages are user-owned — build and
-  restyle them freely. Don't hand-roll the auth security surface (`src/lib/auth.ts`,
-  `src/app/api/auth/**`, the prisma auth schema, `require-auth`/`require-admin`):
-  those are framework-owned, installed by the auth module.
-- Put recurring work in `polsia.toml` `[[crons]]`; do not use in-process
-  schedulers for product behavior.
-
-## Agent Workflow
-
-1. Read `AGENTS.md` and the three `.polsia/` state files.
-2. Decide whether the request is app-specific UI/business logic or a reusable
-   capability that should come from a module.
-3. Install modules through the Polsia module installer when a module owns the
-   capability. Do not clone module files by hand.
-4. Write app-specific code in user-owned areas:
-   - Routes: `src/app/(custom)/<feature>/page.tsx`
-   - API handlers: `src/app/api/<resource>/route.ts`
-   - Contracts: `src/lib/contracts/<resource>.ts`
-   - Business logic: `src/lib/business/<feature>.ts`
-   - Custom components: `src/components/custom/<feature>.tsx`
-   - Hooks: `src/hooks/use-<feature>.ts`
-5. Replace the starter home by editing `src/app/(setup)/page.tsx` in place, or
-   delete the `(setup)` route group before adding another page that resolves to
-   `/`.
-6. Set the product identity in `src/lib/brand.ts`, update `src/lib/nav.ts` for
-   reachable public pages, and rely on the built-in robots, sitemap, metadata,
-   and Open Graph plumbing.
-7. Keep every feature reachable from the home page or, for authenticated
-   features, the dashboard.
-8. Run the relevant checks before shipping.
-
-Module installs go through the Polsia module installer. The installer owns
-module file writes, ownership-map updates, install hashes, and module validators.
-Do not clone module files or copy them by hand.
-
-## Data Plane
-
-Product pages are client components. They call route handlers through
-`apiFetch`, passing a shared zod schema to validate the response at runtime.
-
-Each resource should have one shared contract in `src/lib/contracts/<resource>.ts`.
-The route handler validates request and response shapes with that contract, and
-the client imports the same schema.
-
-Validation errors from route handlers use:
-
-```ts
-{ errors: { fieldName: 'Message' } }
+```
+Environment
+    ↓
+Observation
+    ↓
+Strands Agent
+    ↓
+Tool Call / Decision
+    ↓
+Action Validation
+    ↓
+State Transition
+    ↓
+New Observation
+    ↓
+Evaluation / Replay
 ```
 
-Client forms map those errors with `applyServerErrors`. Transient success or
-unexpected failure feedback should use `toast` from `sonner`.
+The agent never touches the simulation state directly. It can only read an observation and ask for an action; the environment decides whether that action is legal and what it does. Each pass through the loop is one bounded agent turn, driven by an explicit API call rather than a background process, so a run advances only when it is asked to.
 
-## UI
+## Current Environment
 
-The template already includes a broad shadcn primitive set under
-`src/components/ui/**`. Compose those primitives first, restyle through theme
-tokens and component variants, and add new primitives with:
+One environment is implemented: **Resource routing** — balance energy, materials, and water against budget, permissions, and risk.
 
-```bash
-npx shadcn@latest add <name> --yes
-```
+| Concept | Implemented values |
+| --- | --- |
+| Environment | `resource-routing` |
+| Objectives | Complete the delivery (target 8) · Preserve the reserve (target 10) · Stabilise the grid (target 9) |
+| Resources | Energy · Materials · Water — each with capacity 12 and a maximum risk of 8 |
+| Action types | `harvest` · `allocate` · `rest` |
+| Seeds | 1042 · 2048 · 4242 · 9182 |
+| Default configuration | budget 24 · max steps 12 · max turns 12 · tool timeout 30 000 ms |
 
-Reusable app-specific UI belongs in `src/components/custom/**`.
+The environment is a pure deterministic transition function: it holds no I/O, no randomness, and no clock. Given a seed and an action sequence, the resulting state is fully determined by code in `src/lib/business/simulation.ts`.
 
-## Directory Guide
+## Agent Runtime
 
-```text
-.
-├── .polsia/                          Generated state and ownership map
-├── prisma/
-│   ├── schema/_base.prisma           Datasource + generator only
-│   └── migrations/migration_lock.toml Project-level migration lock
-├── public/                           Customer assets
-├── src/
-│   ├── app/
-│   │   ├── (setup)/page.tsx          Starter home served at /
-│   │   ├── (custom)/example/page.tsx Data-plane example page
-│   │   ├── api/example/route.ts      Data-plane example route
-│   │   ├── health/route.ts           Deploy healthcheck
-│   │   ├── layout.tsx                Root layout and providers slot
-│   │   └── globals.css               Tailwind theme and brand token slot
-│   ├── components/
-│   │   ├── ui/                       shadcn primitives
-│   │   ├── custom/                   App-owned compositions
-│   │   └── theme-provider.tsx        next-themes wrapper
-│   ├── hooks/                        App-owned React hooks
-│   ├── lib/
-│   │   ├── api-client.ts             Client transport helper
-│   │   ├── brand.ts                  Product name and description
-│   │   ├── contracts/example.ts      Example shared zod contract
-│   │   ├── csp.ts                    CSP builder
-│   │   ├── db.ts                     Prisma singleton
-│   │   ├── env.ts                    Typed env schema
-│   │   ├── forms.ts                  Server error mapping
-│   │   ├── nav.ts                    App navigation config
-│   │   └── utils.ts                  cn()
-│   └── modules/                      Vendored module installs
-├── tests/unit/                       Vitest unit tests
-├── next.config.ts                    Next config and security headers
-├── proxy.ts                          CSP nonce and middleware chain slot
-├── polsia.toml                       Deploy manifest and scheduled jobs
-└── AGENTS.md                         Engineering agent operating manual
-```
+The agent runtime is the official Strands Agents TypeScript SDK (`@strands-agents/sdk`). An `Agent` is constructed per turn with a system prompt, an allow-listed toolbox, `toolExecutor: 'sequential'`, an explicit turn limit, and a cancellation signal.
 
-## Security Headers
-
-`next.config.ts` sets baseline response headers:
-
-- `Strict-Transport-Security`
-- `X-Content-Type-Options`
-- `X-Frame-Options`
-- `Referrer-Policy`
-- `Permissions-Policy`
-- `Cross-Origin-Opener-Policy`
-- `Cross-Origin-Resource-Policy`
-
-`proxy.ts` sets a per-request Content Security Policy. `script-src` stays strict
-with a nonce and `strict-dynamic`; `style-src` allows inline styles so Radix and
-shadcn runtime positioning works in production.
-
-## Day-1 Validators
-
-The bare scaffold validator floor is declared in
-`.polsia/installed.json#day_1_floor`. Module-specific validators are added by
-module manifests when modules install.
-
-- `no-secrets-in-client-bundle`
-- `server-only-import-on-secret-modules`
-- `agent-has-no-prod-db-credentials`
-- `db-ssl-required`
-- `parameterized-queries-only`
-- `security-headers-present`
-- `lockfile-committed-and-pinned`
-- `lifecycle-scripts-disabled`
-- `next-version-not-affected-by-cve-2025-29927`
-
-## Local Development
-
-Node 22 or newer is required (`.nvmrc` pins `22`; `package.json#engines` declares
-`>=22.0.0`). The Agent Twin providers run on the Strands Agents SDK: the Bedrock
-provider signs its requests with the AWS SDK, and both need the Node runtime.
-The framework `.npmrc` sets
-`engine-strict=false`, so npm warns rather than refuses on an older Node — CI pins
-22 via `.nvmrc`, and an older runtime is not a supported configuration.
-
-Use npm; the lockfile is committed.
-
-```bash
-nvm use                                          # Node 22 from .nvmrc
-npm ci
-npm run typecheck
-npm run lint
-npm run test
-SKIP_ENV_VALIDATION=1 npm run dev
-```
-
-`npm run dev` and `npm run build` validate `DATABASE_URL` and
-`NEXT_PUBLIC_APP_URL` when `SKIP_ENV_VALIDATION` is not set. On a local clone
-without a provisioned database, either set the required vars in `.env.local` or
-prefix the command with `SKIP_ENV_VALIDATION=1`.
-
-`typecheck`, `lint`, and `test` do not require env. With no modules installed,
-`/` serves the `(setup)` placeholder until a module or app-authored root page
-takes over.
-
-## CI/CD
-
-`.github/workflows/ci.yml` runs on every push and PR to `main`: `npm run lint`,
-`npm run test`, `npm run build` (with `SKIP_ENV_VALIDATION=1`), then
-`npm run typecheck`. Every gate runs even if an earlier one failed, so one red
-build shows every problem at once.
-
-Typecheck runs **after** the build on purpose: `tsconfig.json` includes
-`.next/types/**`, where Next generates route-handler and page prop types.
-Running `tsc` before a build silently skips them.
-
-Releases are two-phase. **`release.yml`** (Actions tab, manual) takes a
-`patch`/`minor`/`major` bump, an exact `version`, or `dry_run` to preview. It
-re-runs `ci.yml` against the commit being released, bumps `package.json` on a
-`release/v<version>` branch, pushes it, and prints a link to open the PR. **You
-open that PR** — a PR created with `GITHUB_TOKEN` never triggers its own checks,
-so its required checks would never report. Merging it fires
-**`tag-release.yml`**, which creates the `v<version>` tag and the GitHub
-Release.
-
-The bump goes through a PR rather than a direct push because a branch ruleset
-requiring status checks rejects a fresh commit pushed straight to `main`, and
-GitHub refuses an `Integration` bypass actor that is not registered on the org.
-
-Nothing is published to npm (this package is `private: true`). The version bump
-on `main` is what the fleet converges on: the backend pulls this `package.json`
-and compares it to each codebase's pinned template version, so a bump fires
-nothing by itself — each company re-stamps at the end of its next successful
-engineering run.
-
-## Versions
-
-Pinned exact versions are used for the framework stack:
-
-- Next.js 16.2.6, App Router
-- React 19.2.7
-- Tailwind CSS 4.3.0, CSS-first `@theme`
-- shadcn/ui New York style
-- sonner 2.0.7
-- TypeScript 5.5.4, strict mode
-- Biome 2.3.1, lint and format
-- Vitest 3.2.6
-- Prisma 6.19.3
-- Node >=22.0.0 (pinned in `.nvmrc`)
-
-Security `overrides` in `package.json` pin patched transitive dependency
-versions that direct framework pins cannot reach on their own.
-
-## Causelark Agent Twin MVP
-
-The simulation lab follows a persistent configure → run → inspect workflow.
-Choose an environment, objective, and seed; start a run; advance one bounded
-agent turn at a time; and inspect the persisted observation, explicit Strands
-tool calls, validation outcomes, state changes, metrics, and replay frames at
-`/dashboard/simulations/<runId>`.
-
-### Provider: Strands Agents SDK on Amazon Bedrock (or AgentRouter for development)
-
-The Agent Twin agent path runs the official Strands Agents TypeScript SDK
-(`@strands-agents/sdk`). Two model providers are selectable, and both are Strands
-model clients driving the same bounded agent loop, the same allow-listed
-simulation tools, and the same validation, persistence, metrics and replay path —
-only the model client differs. The provider boundary is one file,
-`src/lib/agent/provider.ts`; nothing in `src/lib/agent/**` imports the raw `openai`
-package or the Polsia AI proxy.
+Model providers sit behind one abstraction boundary, `src/lib/agent/provider.ts`. Nothing in `src/lib/agent/**` imports a provider SDK directly.
 
 | Provider | `AGENT_PROVIDER` | Model client | Intended use |
 | --- | --- | --- | --- |
-| **Amazon Bedrock** | `bedrock` (default) | `BedrockModel`, driving the Bedrock Converse API via `@aws-sdk/client-bedrock-runtime` | **Production and the AWS/hackathon deployment.** The intended provider. |
-| **AgentRouter** | `agentrouter` | Strands' native OpenAI-compatible `OpenAIModel` in Chat Completions mode | **Development and testing only.** Lets the Agent Twin run locally before AWS credentials exist. |
+| Amazon Bedrock | `bedrock` (default) | Strands `BedrockModel`, driving the Bedrock Converse API | Production, and the AWS/hackathon deployment |
+| AgentRouter | `agentrouter` | Strands' OpenAI-compatible `OpenAIModel`, Chat Completions mode | Development and testing only |
 
-Selection is explicit and never falls back: an unrecognised `AGENT_PROVIDER`
-fails the turn with a visible configuration error instead of quietly running —
-and billing — the other provider. Unset keeps the previous behaviour and selects
-Bedrock, so an existing deployment is unaffected.
+Provider selection is explicit and **never falls back**. An unrecognised `AGENT_PROVIDER` fails the turn with a visible configuration error rather than quietly running — and billing — the other provider. Unset selects Bedrock, so an existing deployment is unaffected.
 
-#### Amazon Bedrock (default)
+Credentials are never read from application env vars for Bedrock and never stored in this repository; the AWS SDK resolves them through its standard credential provider chain. Provider failures are classified into stable codes — `missing_configuration`, `missing_credentials`, `access_denied`, `throttled`, `timeout`, `provider_error` — by walking the error cause chain, so a failure is recorded as a categorised event rather than an opaque string. Raw provider responses, request bodies, authorization headers, and API keys are never persisted.
+
+## Bounded Agent Loop
+
+An agent turn is request-driven and bounded at three independent levels:
+
+- **Model turns.** `DEFAULT_AGENT_LOOP_TURNS = 6`, hard-capped at `MAX_AGENT_LOOP_TURNS = 12`. The limit is derived from the action allowance (`allowance * 2 + 1`) so the agent always gets a final observation after its last action, and is clamped to the cap.
+- **Actions per turn.** `DEFAULT_MAX_ACTIONS_PER_TURN = 3`. Once the allowance is spent, `request_action` returns a `REJECTED` tool result stating that the per-turn action allowance is spent, and the simulation state is left untouched.
+- **Simulation steps.** The environment enforces its own `maxSteps` and budget independently of the agent.
+
+A turn therefore cannot loop indefinitely, cannot spend more actions than allowed, and cannot advance the world past its configured limits — regardless of what the model decides. Turn termination is recorded with a `stopReason` (`endTurn`, `limitTurns`, or `cancelled`).
+
+Turns are claimed transactionally. A run is advanced only if it is owned by the caller, still `RUNNING`, and has no turn already in progress; the claim sets `turnInProgress` in the same conditional update. A concurrent or duplicate request cannot double-advance a run.
+
+## Safety / Validation
+
+The agent is given exactly two tools, both allow-listed in the contracts module:
+
+- `observe_resources` — takes no input and returns the current observable state, objective, task progress, and constraints.
+- `request_action` — takes a validated `SimulationActionInput` and returns the validation outcome.
+
+Every requested action passes through `evaluateSimulationAction` before any state changes. The environment rejects invalid actions with explicit codes, including `MALFORMED_ACTION`, `TERMINAL_RUN`, `PERMISSION_DENIED`, `RESOURCE_REQUIRED`, `CAPACITY_EXCEEDED`, `INSUFFICIENT_ENERGY`, `INSUFFICIENT_RESOURCE`, and `BUDGET_EXCEEDED`. State is assigned only when validation accepts the action — a rejected action is persisted as an `action.rejected` event with its reason and leaves the state byte-identical.
+
+The agent cannot skip validation, cannot write state directly, and cannot invent an action type outside the contract; the tool input is parsed against a Zod schema before it reaches the environment. There is no path in which a model response mutates simulation state without passing validation first.
+
+## Persistence, Metrics & Replay
+
+All run state lives in PostgreSQL via Prisma, owned per user. An agent turn writes an ordered event stream:
+
+`agent.turn.started` → `observation.created` → `tool.requested` → `tool.result` → `action.requested` → `action.validated` / `action.rejected` → `state.changed` → `agent.turn.completed`, terminating in `simulation.completed` or `simulation.failed`. Failures persist an `agent.error` event carrying the classified code.
+
+Metrics are derived from what was actually persisted: budget spent against the limit, objective and task progress, tool call counts and success counts from the Strands run metrics, and token usage from the latest agent invocation.
+
+Replay reconstructs the run frame by frame from the persisted events, highlighting the frames where state actually changed. A rerun re-derives the environment from the same seed and reports an explicit determinism check: whether the initial state matches, that the transition engine is `deterministic`, and that the provider decision path is `variable`.
+
+## Architecture
+
+```
+UI
+ ↓
+Next.js API
+ ↓
+Agent orchestration
+ ↓
+Strands Agents
+ ↓
+Provider abstraction
+ ├── BedrockModel → Amazon Bedrock
+ └── AgentRouter → DeepSeek V4 Flash
+ ↓
+Simulation tools
+ ↓
+Validation
+ ↓
+Deterministic simulation
+ ↓
+Prisma/PostgreSQL persistence
+ ↓
+Metrics / Replay
+```
+
+The dashboard at `/dashboard/simulations` starts runs; `/dashboard/simulations/<runId>` is the run inspector, showing the observable world, the current observation, objective progress, tasks and guardrails, the persisted activity trace, action history, run metrics, and a replay scrubber.
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Agent framework | Strands Agents TypeScript SDK 1.17 |
+| Model providers | Amazon Bedrock (Converse API) · AgentRouter (OpenAI-compatible) |
+| Application | Next.js 16.2 (App Router, Turbopack), React 19.2 |
+| Language | TypeScript 5.5, strict, `noUncheckedIndexedAccess` |
+| Contracts | Zod 4 |
+| Persistence | PostgreSQL via Prisma 6.19 |
+| Auth | better-auth 1.6 |
+| UI | Tailwind CSS 4.3, Radix UI primitives, shadcn-style components |
+| Env validation | `@t3-oss/env-nextjs` |
+| Lint / format | Biome 2.3 |
+| Tests | Vitest 3.2 |
+| Runtime | Node.js ≥ 22 (pinned in `.nvmrc`) |
+
+## Getting Started
+
+Requires Node.js ≥ 22 and a reachable PostgreSQL database.
+
+```bash
+npm ci                          # install dependencies
+cp .env.example .env.local      # then fill in DATABASE_URL and BETTER_AUTH_SECRET
+npm run db:migrate:deploy       # apply migrations
+npm run dev                     # http://localhost:3000
+```
+
+Then open `/dashboard/simulations`, choose an environment, objective, and seed, and start a run. The run inspector advances the agent one bounded turn at a time.
+
+On a clone without a provisioned database, prefix commands with `SKIP_ENV_VALIDATION=1` to bypass env validation at build time.
+
+Available scripts:
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Development server |
+| `npm run build` | Production build |
+| `npm run start` | Serve the production build |
+| `npm run lint` | Biome check |
+| `npm run lint:fix` | Biome check with safe fixes |
+| `npm run format` | Biome format |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run test` | Vitest run |
+| `npm run db:generate` | Prisma client generation |
+| `npm run db:migrate:dev` | Create and apply a migration in development |
+| `npm run db:migrate:deploy` | Apply pending migrations |
+| `npm run db:studio` | Prisma Studio |
+
+## Environment Variables
+
+See `.env.example` for the authoritative list; only placeholders are committed there.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `BEDROCK_MODEL_ID` | yes | Bedrock model or inference-profile identifier. Unset means turns fail with a visible configuration error rather than running a billed default model. |
-| `BEDROCK_REGION` | no | Region for the Bedrock client. Falls back to `AWS_REGION`. |
-| `AWS_REGION` / `AWS_DEFAULT_REGION` | no | Standard AWS region resolution. |
+| `DATABASE_URL` | yes | PostgreSQL connection string for the Prisma client |
+| `BETTER_AUTH_SECRET` | yes | Session signing secret |
+| `BETTER_AUTH_URL` | yes | Auth base URL |
+| `NEXT_PUBLIC_APP_URL` | yes | Public application origin |
+| `NODE_ENV` | yes | Runtime environment |
+| `AGENT_PROVIDER` | no | `bedrock` (default) or `agentrouter`. Unrecognised values fail the turn rather than falling back |
+| `BEDROCK_MODEL_ID` | for Bedrock | Bedrock model or inference-profile identifier. There is no silent default: unset fails the turn with `missing_configuration` rather than running a billed model |
+| `BEDROCK_REGION` | no | Bedrock region; falls back to `AWS_REGION`. AWS credentials come from the SDK's standard credential chain, not from env vars |
+| `AGENTROUTER_API_KEY` | for AgentRouter | Development provider credential |
+| `AGENTROUTER_BASE_URL` | no | Defaults to `https://agentrouter.org/v1` |
+| `AGENTROUTER_MODEL` | no | Defaults to `deepseek-v4-flash` |
+| `NEXT_PUBLIC_API_URL` | no | External API origin; unset means same-origin `/api` |
 
-Credentials are **never** read from application env vars and never stored in
-this repo. The AWS SDK resolves them through its standard credential provider
-chain — environment, shared `~/.aws/credentials` and `~/.aws/config` profiles,
-SSO, container and instance metadata, and web identity. The identity needs
-`bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` on the chosen
-model, plus model access granted in the Bedrock console for that region.
+`.env.local` is gitignored. Never commit real credentials.
 
-#### AgentRouter (development)
+## Testing
 
-An OpenAI-compatible endpoint, reached through the Strands SDK's own
-OpenAI-compatible adapter rather than a parallel agent architecture, so the agent
-keeps genuine tool calling: it observes resources, decides, requests an action,
-has that action validated against the simulation, observes the changed state, and
-continues — exactly as under Bedrock.
+The normal test suite requires no provider credentials — provider interactions are tested against fakes, so it runs offline and deterministically.
 
-| Variable | Required | Purpose |
+Latest local verification, on the current working tree:
+
+| Gate | Command | Result |
 | --- | --- | --- |
-| `AGENT_PROVIDER` | yes | Set to `agentrouter` to select this provider. |
-| `AGENTROUTER_API_KEY` | yes | Server-side API key. Unset means turns fail with `missing_configuration` rather than calling anonymously. |
-| `AGENTROUTER_BASE_URL` | no | Endpoint base. Defaults to `https://agentrouter.org/v1`; the client appends `/chat/completions`. Configurable so an operator can point elsewhere. |
-| `AGENTROUTER_MODEL` | no | Model ID. Defaults to `deepseek-v4-flash`. |
+| Tests | `npm run test` | 243 tests passing (15 test files) |
+| Lint | `npm run lint` | Passing (147 files checked) |
+| Build | `SKIP_ENV_VALIDATION=1 npm run build` | Passing |
+| Typecheck | `npm run typecheck` | Passing |
 
-The API key is server-only. It is read from validated server env, passed to the
-model client, and never returned in a response, persisted with a turn, or written
-to a log — the same containment the AWS credentials get. `.env.example` carries
-placeholders only; real credentials belong in `.env.local`, which is gitignored.
+Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, and the client/server contracts. Migration deployment was verified separately against a fresh disposable PostgreSQL database: all three migrations apply, including the simulation tables, with no schema drift.
 
-Provider failures from either provider are normalized into the same safe codes
-(`missing_configuration`, `missing_credentials`, `access_denied`, `throttled`,
-`timeout`, `provider_error`) with fixed, non-sensitive messages, worded for the
-provider that was actually selected. SDK error text, ARNs, account IDs, request
-bodies, authorization headers, and credentials are never returned to the client
-or written to logs. The persisted turn records which provider ran, so a run is
-never ambiguous about the model that produced it.
+No real provider execution is claimed by these numbers. See Project Status.
 
-### Bounded multi-step turns
+## Project Status
 
-`POST /api/simulations/runs/<runId>/agent-step` stays request-triggered: one HTTP
-call performs one *bounded* turn. Inside that turn the agent may run several
-observe → act → observe cycles so it can confirm the effect of an action before
-deciding the next one. Two independent limits make an unbounded loop impossible:
+### Implemented
 
-- a per-turn action allowance on `request_action` (default 3), after which
-  further requests are refused without touching state; and
-- a model-call allowance passed to the SDK as `limits.turns` (derived from the
-  action allowance and hard-capped at 12), plus a wall-clock budget
-  (`configuration.toolTimeoutMs`).
+- Deterministic simulation environment (`resource-routing`) with three objectives, four seeds, and a pure transition function
+- Strands Agents runtime with an allow-listed two-tool box and an explicit, non-falling-back provider abstraction
+- Bounded agent loop with three independent limits, transactional turn claiming, and cancellation
+- Action validation with explicit rejection codes, applied before any state change
+- PostgreSQL persistence of runs, events, tool calls, and actions, scoped per owner
+- Metrics derived from persisted state and Strands run metrics
+- Replay reconstruction and a rerun determinism check
+- Dashboard run starter and run inspector
+- Provider error classification, with no credential or raw-response persistence
+- Local verification gates green: 243 tests, lint, production build, typecheck
+- Migration deployment verified against a fresh disposable PostgreSQL database
 
-Tools are a fixed allow-list (`observe_resources`, `request_action`) and are
-executed sequentially because they share one mutable environment copy. Every
-requested action still goes through `evaluateSimulationAction`; a rejected action
-returns a reason and never mutates simulation state. The simulation state, not
-the model's narration, remains the source of truth.
+### Pending external verification
 
-### Determinism
+- **Real Amazon Bedrock E2E execution is currently pending AWS/Bedrock credentials.**
+- **Real AgentRouter E2E execution is currently pending account/client authorization.**
 
-The environment and its transition engine are deterministic: the same seed plus
-the same validated action sequence always produces the same trajectory, which is
-what replay reconstructs from persisted records. The model's choice of actions is
-**not** deterministic and is not claimed to be — a rerun reports
-`transitionEngine: 'deterministic'` and `providerDecisionPath: 'variable'`
-separately.
+Neither provider has been exercised end-to-end against a live endpoint. The provider path is implemented and unit-tested against fakes, and failures are classified and persisted safely, but no live model has driven a real run in this repository. The default Bedrock provider fails visibly with `missing_configuration` when `BEDROCK_MODEL_ID` is unset, rather than silently substituting a model.
 
-### Persistence and replay
+### Future direction
 
-Every turn persists, in order: the tool calls with their inputs, outputs,
-validation outcomes and latency; the validated or rejected actions with the state
-they produced; and the event timeline (turn started, observation, tool requested,
-tool result, action requested, action validated/rejected, state change, turn
-completed, terminal). Metrics and replay frames are derived from those records
-rather than from any client state, and private chain-of-thought is never
-persisted — the agent's observable output is limited to tool calls and their
-results.
+None of the following is implemented. They are listed to mark direction, not capability:
 
-Simulation tables are owned by this app, not the framework: they live in
-`prisma/migrations/20260912000000_add_simulation_tables/migration.sql`, a purely
-additive user-owned migration that does not touch the framework-owned better-auth
-migrations or `migration_lock.toml`.
+- Adversarial scenarios that deliberately pressure the agent toward unsafe or degenerate behaviour
+- Counterfactual and branching simulations that fork a run from a checkpoint
+- Safety evaluation with defined scoring and pass/fail thresholds
+- Agent benchmarking across models and configurations on fixed seeds
+- Additional professional environments beyond resource routing
 
-### Remaining legacy surface
+## Hackathon
 
-The framework's own `ai` module (`src/lib/ai/client.ts`,
-`src/app/api/ai/chat/route.ts`) still talks to the Polsia AI proxy and still
-reads `POLSIA_AI_BASE_URL` / `POLSIA_API_KEY` / `POLSIA_API_TOKEN`. That code is
-unrelated to the Agent Twin and is deliberately left as-is; the Agent Twin path
-does not import it.
+Agent Twin was built for the Strands Agents hackathon.
 
-Local verification needs the usual database/auth environment. Because AWS
-credentials resolve through the standard chain, a local agent-step call under the
-default Bedrock provider without reachable credentials intentionally persists a
-visible failure rather than silently running a fake agent. To exercise the real
-agent loop locally before AWS credentials exist, set `AGENT_PROVIDER=agentrouter`
-with an `AGENTROUTER_API_KEY`; the turn records that provider by name, and the
-Bedrock path is unchanged.
+- **Strands Agents.** The agent runtime is the official Strands Agents TypeScript SDK — a real `Agent` with a real toolbox, `sequential` tool execution, explicit turn limits, cancellation, and run metrics read back from the SDK.
+- **Autonomous agent behaviour.** The model decides. It chooses when to observe and when to act, up to three validated actions per turn, and it can be observed making those choices across multiple bounded interactions.
+- **Professional use cases.** The environment models an operational resource-routing problem with budget, capacity, permissions, and risk — the shape of a real constrained decision problem, not a toy prompt.
+- **Safe testing before real-world deployment.** The agent acts on a deterministic digital twin, where a bad decision costs nothing but a persisted, replayable trace. Nothing the agent does reaches a real system, and no action mutates state without passing validation.
+- **AWS Bedrock integration.** Amazon Bedrock is the intended production provider, reached through the Strands `BedrockModel` on the Bedrock Converse API, using the standard AWS credential chain.
+
+No claim is made that this project has placed, passed, or won anything.
 
 ## License
 
 MIT. See [LICENSE](./LICENSE).
+
+This repository began from a Polsia application template and retains its scaffold, auth module, ownership metadata, and migration layout. The Agent Twin product surface — simulation environment, agent runtime, tools, validation, persistence, and dashboard — is application code built on top of it.

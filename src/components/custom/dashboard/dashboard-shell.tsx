@@ -1,6 +1,6 @@
 // @polsia:user-owned — the Agent Twin console shell.
 //
-// A header that says what the product is, a nav for the four destinations, and
+// A header that says what the product is, a nav for the five destinations, and
 // the signed-in operator named once. Everything else is the page's. The
 // authentication behaviour is unchanged from the template: the session is read
 // on the client, an absent session is redirected to /login, and the route
@@ -89,8 +89,13 @@ export function DashboardShell({ children }: DashboardShellProps) {
           <aside className="min-w-0 lg:border-r lg:border-border lg:pr-6">
             <DashboardNav />
             <div className="mt-6 hidden border-t border-border pt-4 lg:block">
+              {/*
+                "Signed in", not "Operator": the operator is now a destination in
+                the nav above, and two different things on one screen sharing a
+                label is a screen a reader has to decode.
+              */}
               <p className="text-caption uppercase tracking-[0.06em] text-muted-foreground">
-                Operator
+                Signed in
               </p>
               <p className="mt-1 truncate text-small" title={session.user.email ?? undefined}>
                 {session.user.email ?? session.user.name ?? 'Account'}

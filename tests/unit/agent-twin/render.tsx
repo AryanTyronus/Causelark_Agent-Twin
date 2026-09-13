@@ -122,13 +122,25 @@ export async function render(element: ReactElement): Promise<Rendered> {
       await settle();
     },
     type: async (target: HTMLElement, value: string) => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        'value',
-      )?.set;
+      // React tracks a field's value on the node itself, so writing `value`
+      // directly makes React believe nothing changed and drop the event. The
+      // prototype's own setter is what updates the tracker — and it has to be
+      // the setter of the *right* element type, or the call is rejected as an
+      // illegal invocation.
+      const prototype =
+        target instanceof window.HTMLTextAreaElement
+          ? window.HTMLTextAreaElement.prototype
+          : target instanceof window.HTMLSelectElement
+            ? window.HTMLSelectElement.prototype
+            : window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
       await act(async () => {
         setter?.call(target, value);
         target.dispatchEvent(new Event('input', { bubbles: true }));
+        // A select reports through `change`; React listens for that rather than
+        // for `input` on a dropdown, so both are sent for one.
+        if (target instanceof window.HTMLSelectElement)
+          target.dispatchEvent(new Event('change', { bubbles: true }));
       });
       await settle();
     },

@@ -42,6 +42,8 @@ Evaluation / Replay
 
 The agent never touches the simulation state directly. It can only read an observation and ask for an action; the environment decides whether that action is legal and what it does. Each pass through the loop is one bounded agent turn, driven by an explicit API call rather than a background process, so a run advances only when it is asked to.
 
+Above that loop sits a second agent — the Operator — which a person points at an objective rather than at a form. It uses the engines below it the way a person would: choose a benchmark, plan, run it, read the evidence, investigate what went wrong, and report. It has no way to compute any of those answers itself. See [The Operator](#the-operator).
+
 ## Current Environment
 
 One environment is implemented: **Resource routing** — balance energy, materials, and water against budget, permissions, and risk.
@@ -186,7 +188,9 @@ The verdict is computed on demand rather than stored, because a pure function of
 ## Architecture
 
 ```
-UI
+HUMAN (an objective, not a form)
+ ↓
+Agent Twin Operator — a Strands agent whose entire capability is its tool list
  ↓
 Next.js API
  ↓
@@ -213,9 +217,119 @@ Metrics / Replay / Evaluation
 Counterfactual analysis (derived from a recorded trace)
  ↓
 Benchmarks & agent comparison (same world, different agent)
+ ↓
+Evidence / trust report
+ ↓
+HUMAN (a decision)
 ```
 
 The dashboard at `/dashboard/simulations` starts runs; `/dashboard/simulations/<runId>` is the run inspector, showing the observable world, the current observation, objective progress, tasks and guardrails, the persisted activity trace, action history, run metrics, and a replay scrubber. The runs a comparison creates appear in the inspector like any other run, because they are ordinary runs.
+
+The one layer above the engines is the Operator, and it enters this pipeline by tool call rather than by replacing anything inside it: the Operator chooses which benchmark to run and which evidence to look at, and every number it reports was produced below it.
+
+## The Operator
+
+Everything above is a pipeline a person drives. The Operator is the same pipeline driven by an agent — pointed at an objective instead of a form.
+
+> **"Test this agent and tell me whether it is ready to deploy."**
+
+Given that, the Operator discovers which benchmarks this build actually registers and which agents it can actually run, commits to a test plan whose every field is copied from those two registries, executes it through the existing benchmark engine, reads the aggregate, pulls the evidence behind the cases that failed or degraded, asks the counterfactual engine whether a decision plausibly cost the run, and assembles an **Agent Trust Report** ending in `READY`, `CAUTION`, `NOT_READY` — or `INSUFFICIENT_EVIDENCE` when the test did not settle the question.
+
+**The intelligence is orchestration. The truth is not.** The Operator decides *what to do*: which benchmark, which cases, whether a counterfactual is warranted. It never decides *what is true*. It cannot score a run, evaluate a case, compute robustness, rank a counterfactual or choose a verdict, because none of those operations exists in its tool surface. Every number in its report is quoted from an engine that was already there, and every substantive claim carries the run id, scenario id or rule id it came from.
+
+### How it uses Strands
+
+The Operator is a real `Agent` from the official Strands Agents TypeScript SDK, constructed in `src/lib/operator/operator.ts` over the toolbox `src/lib/operator/tools.ts` builds, and invoked **once** under explicit limits:
+
+```ts
+const agent = new Agent({ model, tools, printer: false, toolExecutor: 'sequential', systemPrompt });
+const result = await agent.invoke(userPrompt, { limits: { turns }, cancelSignal });
+```
+
+There is no hand-rolled "while the model wants a tool" loop anywhere in the layer — if the SDK's loop were not what is orchestrating, what is there would not be a Strands agent. The model chooses which tools to call and in what order; the SDK runs the loop and enforces the turn limit; `sequential` execution is required because the tools share the request's mutable state (the committed plan, the result slice, the call budget), so the recorded order is the order the model asked for. A hook attached with `agent.addHook` records each `AfterToolCallEvent` into the trace, which is how the UI can show what actually ran without the model narrating its own process.
+
+The model itself comes from the **existing** provider abstraction — `createAgentModelFor(selection, env)`, the same seam the simulation agent and the comparison engine use. The Operator adds no provider, no client and no credential handling of its own; `AGENT_PROVIDER` decides whether it runs on Bedrock or OpenRouter exactly as it does for every other agent here.
+
+### The tool surface
+
+Ten tools, and that is the whole of what the Operator can do. Each is an adapter: it validates its arguments, calls one function that already exists in this codebase, reduces the answer to something a model can read, and records the call. None re-derives a score or re-runs a scenario.
+
+| Tool | Kind | What it does |
+| --- | --- | --- |
+| `list_agents` | read | The agent configurations this deployment can actually run, from the provider boundary. A provider that cannot be resolved is listed with the reason. Contains no credential |
+| `list_benchmarks` | read | The benchmarks registered in this build. The list is exhaustive: an id not in it cannot be run |
+| `get_benchmark` | read | One registered benchmark in full — scenario versions, declared seeds, objective, robustness formula. Resolved against the compiled registry, so an id or version that does not exist is refused rather than invented |
+| `create_test_plan` | action | Commits to what will be executed, before anything is. Every field comes from the registry and the catalogue. Writes nothing, runs nothing, returns the plan and the fingerprint an execution must present back |
+| `run_benchmark` | action | Executes the committed plan through the existing benchmark engine. The only tool that spends provider capacity. Execute mode only, one per request, refused without the plan fingerprint |
+| `inspect_results` | read | The aggregate the execution produced: case counts, dimensions, robustness, every scenario row, the failure classification. Carries the run ids |
+| `inspect_case` | read | One case in detail: the engine's evaluation of its run, its actions with the rejected ones quoted, its tool-call failures, its faults |
+| `replay_case` | read | The state trajectory of one case, and which steps the replay marks as important. For *what changed* rather than *what was scored* |
+| `analyze_counterfactual` | read | What else the agent could have done at each decision point of one run, and which decision cost it most — the counterfactual engine's own policies, ranking and figures. Bounded per request |
+| `generate_trust_report` | action | Assembles the report from what this execution recorded. Every measurement, threshold and evidence reference is computed here from engine output; the operator supplies only its reading of them, which is labelled as interpretation |
+
+**Read tools and action tools are different things.** Three tools can change the world: one commits to a plan (`create_test_plan`, which only writes to the run's own memory), one spends money (`run_benchmark`), and one assembles the report. Everything else only reads. What the surface deliberately does **not** contain is as load-bearing as what it does:
+
+- no shell, no filesystem, no arbitrary HTTP, no SQL, no query builder, no generic `query_database()`
+- no environment inspection — a tool cannot read a credential, and `list_agents` reports that a provider *is configured* without touching the value that configures it
+- no owner parameter. Identity is captured in the tool closures from the authenticated session; there is no tool input that names a user, because a model that could name one could name someone else's
+- no way to read a run this session did not just create. `inspect_case`, `replay_case` and `analyze_counterfactual` resolve their run id against the result *this* execution produced before they touch the database, and the read they then perform is owner-scoped again — so a run id the model invents is refused before any query is issued
+
+### Authorization
+
+The request contract has no owner field. `POST /api/operator` resolves the account from the authenticated session with `requireAuth`, and that id is the only identity any tool ever receives — so there is no shape a caller can send, and no sentence a model can write, that names a different account. A user cannot use the Operator to inspect another user's agents, simulations, experiments, reports or evidence, because the tools that would do it are built per-request around one owner and re-scope every read.
+
+An execution is authorised separately from a preview. `create_test_plan` returns a fingerprint over exactly what was authorised — benchmark id and version, agent key, seeds, scenario ids and versions — and `run_benchmark` refuses unless the caller presents that fingerprint back. A plan approved in the browser and a plan the server would build now must be the same plan, or nothing runs.
+
+### Bounded autonomy
+
+The Operator's whole allowance is a set of constants in `src/lib/operator/config.ts`. They are not configuration read from a request, and each is enforced inside a tool closure rather than left to the model's judgement about when to stop — a model that ignores its instructions still cannot exceed them, because the code that would do the work refuses.
+
+| Bound | Value | Why |
+| --- | --- | --- |
+| `MAX_TURNS` | 12 | Aligned with the simulation agent's own turn bound. The seven-step flow needs well under half of it; a confused model cannot loop for long |
+| `MAX_TOOL_CALLS` | 24 | Two per turn on average. A model that wanted to read all seven cases individually would run out — which is the point: choosing which cases are worth looking at is the judgement the Operator exists to make |
+| `MAX_BENCHMARK_RUNS` | 1 | Each case drives a real agent turn loop against a real provider. A second execution doubles the spend of a request a person authorised for one; re-running is a new request with a new authorisation, not a retry |
+| `MAX_COUNTERFACTUAL_ANALYSES` | 3 | Counterfactual analysis is cheap but not free, and running it over every case produces findings nobody asked for. Three is enough for the worst case, the baseline, and one more if they disagree |
+| `MAX_DURATION_MS` | 180 000 | A ceiling on the request, not an expectation. Seven cases at up to twelve turns each against a provider with its own timeouts |
+| `MAX_CASE_EVIDENCE` | 6 | Cases the Operator may pull full evidence for. Bounded separately because each returns an evaluation, an action summary and a fault list |
+| `MAX_TRACE_STEPS` | 60 | A ceiling on the recorded trace, with the truncation written into the run's notices so a reader is told the list is incomplete rather than shown a list that looks complete |
+
+Hitting a bound is a reported outcome, not a hidden one: the run state carries the stop reason, and a run that ran out of turns says so.
+
+### Benchmark selection
+
+The Operator may not invent a benchmark. `list_benchmarks` and `get_benchmark` read the same compiled server-side registry the execution path resolves against, and `create_test_plan` copies its fields from that registry — id, version, name, environment, objective, scenario ids and versions, seeds. A model that names a benchmark this build does not register is refused with a message naming what does exist, so it can correct itself. Scenarios, seeds, names and versions cannot be supplied at all: they are not inputs to any tool.
+
+The same rule covers agents. `list_agents` reports what the provider boundary can actually construct a client for, and a request that names an agent not in that catalogue is refused by name rather than silently substituted. When the two cannot be brought together — no registered benchmark settles the objective, or no runnable agent exists — the correct outcome is to say so and stop, and that is what the Operator is instructed to do.
+
+### Evidence-first reporting
+
+The trust report is assembled by `src/lib/operator/report.ts` and `src/lib/operator/readiness.ts`, not by the model. It carries:
+
+- **Observed** — the benchmark's own figures: overall score, the five dimensions, robustness with its formula, the per-scenario table, the failure classification
+- **Verdict** — computed by a named, documented methodology, `observed-evidence-thresholds-v1`, from declared thresholds over the observed figures. Each rule publishes its threshold, the figure it saw and the evidence runs behind it. A rule whose metric the evidence does not establish is `insufficient`, never a zero and never a pass
+- **Interpretation** — the model's reading, in its own words, labelled as its reading
+- **Evidence** — the run ids, scenario ids, decision ids and policy names the report was derived from
+
+The verdict precedence is fixed: a decisive failure is `NOT_READY` whatever else scored well; a decisive gap in evidence is `INSUFFICIENT_EVIDENCE`; then any failure, then any gap, then any caution, and only then `READY`. There is no universal "good enough" score, and the methodology says what it is rather than implying it. When the evidence is too thin to decide, `INSUFFICIENT_EVIDENCE` is the answer — the Operator is explicitly told that reaching for a reassuring word instead is the failure mode this whole layer exists to prevent.
+
+Three of the report's properties are structural rather than instructed:
+
+- An unavailable metric stays unavailable. A rule that could not see a figure reports `insufficient`; nothing in the path coerces a missing measurement to zero.
+- The provider's failures are never hidden. A case that died on a provider error is a case that died on a provider error, in the counts, in the scenario table, in the verdict and in the report.
+- Causality is not claimed beyond the engine. A counterfactual finding says what the counterfactual engine established under its named policies — never what the agent "would have" done.
+
+### Live provider setup, and development mode
+
+The Operator needs no special configuration: it runs on whichever provider `AGENT_PROVIDER` selects, through the same credential rules as everything else (Bedrock via the AWS SDK's standard credential chain; OpenRouter via server-only `OPENROUTER_API_KEY`). Nothing about it requires a credential of its own, and none is ever placed in a response, a trace or a log.
+
+- **Preview mode** contacts no provider at all. It discovers, plans and stops, showing exactly what *would* run — "7 cases, 1 seed, 7 provider-driven simulations" — so a person can authorise a specific execution. This is the whole path a deployment without live credentials can exercise, and it is the default the UI presents.
+- **Execute mode** is the one that spends money. It requires the plan fingerprint back, and the console labels it LIVE EXECUTION and asks for explicit confirmation before it is sent.
+- **Tests** never use a live model. The suite injects a deterministic fake `Model` — a subclass of the SDK's own abstract class, emitting the real streaming protocol — so the Operator's real loop, real tools, real engines and real database run with no LLM in it at all.
+
+### An example workflow
+
+A person signs in, opens `/dashboard/operator`, picks a target agent, leaves the objective as *"Test this agent and tell me whether it is ready to deploy"* and starts a preview. The operator calls `list_agents`, `list_benchmarks`, `get_benchmark`, and commits to a plan; the page shows the plan — benchmark `resource-routing-robustness@1`, seven cases, one seed, seven provider-driven simulations — and asks for authorisation. On confirmation, it runs the benchmark, reads the results, pulls the evidence for the baseline and for the worst-degrading case, replays that case, runs counterfactual analysis where a decision looks expensive, and writes the report. The verdict is `CAUTION`, because the agent survives the baseline comfortably and loses a quarter of its score under `resource-outage` — and the report says exactly that, with the run ids behind it and the operator's own reading labelled as its reading.
 
 ## The Console
 
@@ -228,6 +342,7 @@ The dashboard at `/dashboard/simulations` starts runs; `/dashboard/simulations/<
 | `/dashboard/tests/<comparisonId>` | The experiment's registration and its runs, and the report the run in this browser session returned |
 | `/dashboard/benchmarks` | The standardised-test catalogue |
 | `/dashboard/benchmarks/<benchmarkId>?version=` | One benchmark at one pinned version: its environment, objective, every condition and seed, its robustness formula and its limits |
+| `/dashboard/operator` | The Operator: an objective, a target agent, the live tool trace, the committed plan, the trust report, and the run ids behind it |
 | `/dashboard/agents` | The agent configurations this deployment can actually run, read from the build's own selection set |
 | `/dashboard/simulations` | The recorded runs, and the run starter |
 | `/dashboard/simulations/<runId>` | The run inspector and replay scrubber |
@@ -325,12 +440,16 @@ Latest local verification, on the current working tree:
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Tests | `npm run test` | 1114 tests passing (44 test files) |
-| Lint | `npm run lint` | Passing (253 files checked) |
+| Tests | `npm run test` | 1318 tests passing (52 test files) |
+| Lint | `npm run lint` | Passing (278 files checked) |
 | Build | `npm run build` | Passing |
 | Typecheck | `npm run typecheck` | Passing |
 
-Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, the evaluation engine's scoring, determinism, purity and bounds, the scenario engine — its catalogue, each shipped scenario, validation and refusal, immutability, determinism, modifier ordering and versioning — the benchmark engine — its declarative definitions and registry, the deterministic run matrix, execution through the real simulation/agent/persistence path, aggregation, the robustness metric, the degradation table, failure analysis, the HTTP surface — the counterfactual engine: the derived action space, the decision points read out of a trace, the continuation policy, the comparison against the recorded verdict, the report's accounting and ranking, the HTTP surface, and the boundaries of every calculation module (no clock, randomness, provider, database, network or dynamic discovery) — and the comparison engine: agent configuration identity and its stability under reordering, the nested matrix and case identity, per-agent isolation, aggregation against the benchmark engine's own numbers, metric and head-to-head comparison, tie semantics, the declared verdict rule, scenario-level comparison, robustness reuse, failure profiles, the isolation of a failing agent, the HTTP surface with every error-to-status mapping, and a static boundary guard proving the calculation modules reach no clock, randomness, network, model, database or vendor name.
+Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, the evaluation engine's scoring, determinism, purity and bounds, the scenario engine — its catalogue, each shipped scenario, validation and refusal, immutability, determinism, modifier ordering and versioning — the benchmark engine — its declarative definitions and registry, the deterministic run matrix, execution through the real simulation/agent/persistence path, aggregation, the robustness metric, the degradation table, failure analysis, the HTTP surface — the counterfactual engine: the derived action space, the decision points read out of a trace, the continuation policy, the comparison against the recorded verdict, the report's accounting and ranking, the HTTP surface, and the boundaries of every calculation module (no clock, randomness, provider, database, network or dynamic discovery) — the comparison engine: agent configuration identity and its stability under reordering, the nested matrix and case identity, per-agent isolation, aggregation against the benchmark engine's own numbers, metric and head-to-head comparison, tie semantics, the declared verdict rule, scenario-level comparison, robustness reuse, failure profiles, the isolation of a failing agent, the HTTP surface with every error-to-status mapping, and a static boundary guard proving the calculation modules reach no clock, randomness, network, model, database or vendor name — and the Operator: its configuration and every bound, the tool surface and each tool's own refusals, the plan builder against the real registry and catalogue, the readiness methodology rule by rule, the report's assembly, the Strands agent driven by a scripted model, the HTTP contract, and the console's rendering of all of it.
+
+The Operator's own suite is adversarial as well as functional. A scripted model is made to ask for `query_database`, `read_file`, a shell, a URL and an environment variable; to name another account's run id and to assert in its arguments whose run it is; to return a benchmark whose *name* contains instructions to the model; to repeat the same call forever; and to send malformed arguments to every tool. The claims it holds are that no such tool exists on the surface the model is offered, that a run produced for one account cannot be read by another, that tool output is data and changes nothing about what may be called next, and that nothing a model can send or a tool can return puts a credential on the wire.
+
+The Operator is verified end to end against a real PostgreSQL database by the same harness: a scripted model drives the real route, the real auth gate, the real tool adapters, the real benchmark/counterfactual/replay engines and real rows. It asserts that a preview plans against the real registry and writes nothing; that an authorised execution creates exactly the seven cases the plan promised, each owned by the caller and readable; that every per-case score the operator shows equals what the evaluation engine returns for the persisted row; that a drill-down returns the replay engine's frames and the counterfactual engine's own policies and figures; that a provider fault stays visible, in the counts, the notices and the verdict; that another account naming those run ids gets refusals and no ids at all; and that the response body carries no credential and no key beyond the run state. Exactly one thing is stubbed, and it is the same thing the other harnesses stub: which tool the model chooses to call.
 
 The benchmark engine is additionally verified against a real PostgreSQL database by a separate harness that is deliberately **not** part of `npm test`: `npx vitest run --config vitest.verification.config.ts`. It runs the full twelve-step local verification — resolution, matrix, execution, isolation, scenario identity, evaluation, failure visibility, aggregate determinism, robustness arithmetic, replay and rerun — against a disposable database, with only the model provider stubbed. It creates real runs and does not remove them, so point it at a throwaway database.
 
@@ -340,7 +459,7 @@ The counterfactual engine is verified against a real PostgreSQL database by the 
 
 The comparison engine is verified the same way, and runs a real two-agent experiment end to end. It resolves an experiment and its matrix, executes fourteen real benchmark cases (two agents × seven scenarios at one seed) through the ordinary turn path, and then checks the comparison against the rows the database actually holds: that every run belongs to the caller and to nobody else, that both agents met a byte-identical starting world per scenario, that the aggregate equals the benchmark report's own numbers, that the provider fault stays against the agent that produced it, that the verdict is the declared rule's, and that a configuration this deployment cannot run is reported as unavailable without costing the other agent its evidence. Exactly one thing is stubbed: the model provider. The stub is not a fake simulation — it invokes the same allow-listed tools the real agent would, so every action still passes through the environment's own validator and is persisted identically. What it replaces is only the choice of which tool to call, which is the one thing a language model decides.
 
-**Running a comparison with a stub provider.** The harness above is the stub path and needs no credential:
+**Running the local verification suite.** Every harness above is the stub path and needs no credential. One command runs all of them — benchmark, counterfactual, comparison and operator — against a throwaway database:
 
 ```bash
 createdb causelark_verify            # a throwaway database
@@ -350,6 +469,25 @@ dropdb causelark_verify
 ```
 
 It creates real runs and does not remove them, so point it at a throwaway database.
+
+**Running the Operator with a stub provider.** The operator is covered by that same command. There is no separate mode for it, because the substitution it needs is the one the harness already makes: the model is replaced at `createAgentModelFor`, so the real route, the real tools and the real engines run with a scripted model deciding which tool to call.
+
+**Running the Operator against a live provider.** The seam is the request, not the model: `POST /api/operator` with an objective, an optional agent catalogue key, and a mode. `preview` contacts no provider. `execute` needs the fingerprint of the plan that was approved, which comes back from the preview:
+
+```bash
+# plan only — no provider call, no cost
+curl -sS -X POST 'http://localhost:3000/api/operator' \
+  -H 'content-type: application/json' --cookie "$SESSION_COOKIE" \
+  -d '{"objective":"Test this agent and tell me whether it is ready to deploy.","mode":"preview"}'
+
+# execute the plan the preview returned, quoting its fingerprint back
+curl -sS -X POST 'http://localhost:3000/api/operator' \
+  -H 'content-type: application/json' --cookie "$SESSION_COOKIE" \
+  -d '{"objective":"Test this agent and tell me whether it is ready to deploy.",
+       "mode":"execute","authorizedPlanFingerprint":"…"}'
+```
+
+An execution runs one benchmark — for the benchmark this build currently registers, seven cases at one seed against whichever provider `AGENT_PROVIDER` selects — and bills accordingly. The owner is taken from the session; there is no field in this body that names an account.
 
 **Running a comparison against live providers.** The seam is the agent *selection*: `POST /api/agent-comparisons/resource-routing-agent-comparison/run` with a body naming the agents, each a `agentId`, `agentVersion`, `provider` and `model`. A selection carries no credential — the credential is resolved from the deployment's own environment when the client is built, so the same endpoint runs a Bedrock agent and an OpenRouter agent side by side provided both are configured:
 
@@ -395,12 +533,16 @@ Separately, during scenario-engine verification (2026-09-13) the OpenRouter key 
 - `GET /api/simulations/runs/<runId>/evaluation` serving the verdict alongside the raw metric set behind it
 - Dashboard run starter and run inspector
 - The Agent Twin console: an overview, a test-creation flow, benchmark catalogue and detail pages, an agents page, a comparison result page, and a methodology page — all render-only over the engines above, with fact and interpretation labelled, absence rendered `unavailable` rather than `0`, and the comparison verdict rendered from the recorded deterministic rule
+- The Agent Twin Operator: a Strands agent that takes an objective, discovers the registered benchmarks and the runnable agents, commits to a fingerprinted test plan, executes it once through the existing benchmark engine, inspects the aggregate and the cases behind it, decides where counterfactual analysis is warranted, and assembles an evidence-backed Agent Trust Report — over a ten-tool surface with no shell, filesystem, HTTP, SQL, environment or cross-owner access, and with every bound enforced in code
+- A documented deployment-readiness methodology (`observed-evidence-thresholds-v1`) that returns `READY`, `CAUTION`, `NOT_READY` or `INSUFFICIENT_EVIDENCE` from the observed evidence, publishes every rule's threshold and the runs behind it, and treats an unmeasurable metric as `insufficient` rather than as a zero
+- `POST /api/operator` serving a preview (which contacts no provider) and an authorised execution (which requires the approved plan's fingerprint), scoped to the signed-in owner, and `/dashboard/operator` rendering the request, the live tool trace, the plan, the report and its evidence inside the existing console
 - Provider error classification, with no credential or raw-response persistence
-- Local verification gates green: 1114 tests, lint, production build, typecheck
+- Local verification gates green: 1318 tests, lint, production build, typecheck
 - Migration deployment verified against a fresh disposable PostgreSQL database, with no schema drift
 - Benchmark execution verified end-to-end against a disposable PostgreSQL database, with only the model provider stubbed
 - Counterfactual analysis verified end-to-end against a disposable PostgreSQL database: a real trace recorded through the real action endpoint, analysed through the real counterfactual endpoint, with the report's accounting checked against what the database actually holds and the identity round trip asserted over every accepted decision
 - Agent comparison verified end-to-end against a disposable PostgreSQL database, with only the choice of tool stubbed: fourteen real benchmark cases across two agents, checked against the persisted rows for ownership scoping, per-scenario world identity, aggregate agreement with the benchmark engine, failure attribution, the verdict, and the isolation of an agent this deployment cannot run
+- Operator execution verified end-to-end against a disposable PostgreSQL database, with only the choice of tool stubbed: a real preview that plans against the registry and writes nothing, a real authorised execution creating the seven cases the plan promised, every per-case figure checked against the evaluation engine's own result for the persisted row, the drill-downs checked against the replay and counterfactual engines, a provider fault kept visible in the counts and the verdict, and a foreign account refused every id
 
 ### Provider verification
 
@@ -432,6 +574,7 @@ Agent Twin was built for the Strands Agents hackathon.
 - **Autonomous agent behaviour.** The model decides. It chooses when to observe and when to act, up to three validated actions per turn, and it can be observed making those choices across multiple bounded interactions.
 - **Professional use cases.** The environment models an operational resource-routing problem with budget, capacity, permissions, and risk — the shape of a real constrained decision problem, not a toy prompt.
 - **Safe testing before real-world deployment.** The agent acts on a deterministic digital twin, where a bad decision costs nothing but a persisted, replayable trace. Nothing the agent does reaches a real system, and no action mutates state without passing validation.
+- **An agent for humans, not a chatbot.** The Operator is a second Strands agent pointed at the person rather than at the world: handed *"test this agent and tell me whether it is ready to deploy"*, it decides which benchmark to run, which failures to investigate, whether a counterfactual is worth running, and when the evidence does not support an answer — while every fact it reports comes from the deterministic engines below it, never from the model.
 - **AWS Bedrock integration.** Amazon Bedrock is the intended production provider, reached through the Strands `BedrockModel` on the Bedrock Converse API, using the standard AWS credential chain.
 
 No claim is made that this project has placed, passed, or won anything.

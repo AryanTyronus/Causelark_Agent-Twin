@@ -25,6 +25,12 @@ perturbation of that baseline, applied before the run exists (see Scenarios).
   persisted evidence; `execute.ts` is the one declared integration seam, and it
   reads a run only through the owner-scoped persistence layer and the shared
   evaluation mapping (see Counterfactuals).
+- `src/lib/operator/` owns the autonomous operator: the bounds it runs under, the
+  tools it may call, the plan it commits to, the readiness methodology and the
+  trust report. Six of its nine modules are pure — no database, no provider, no
+  clock, no network; `tools.ts` and `run.ts` are the two declared seams, and they
+  reach the engines only through the functions the console's own routes call (see
+  The operator).
 - `src/lib/agent/provider.ts` is the replaceable provider boundary. The runtime
   uses the official Strands Agents TypeScript SDK with one of two selectable
   model clients, both from that SDK: `BedrockModel`
@@ -726,6 +732,290 @@ Two agents that miss *different* cases can tie on task success and still be
 separated on overall score; the report shows both facts rather than collapsing
 them into one number.
 
+## The operator
+
+Everything above is an engine a person drives through a form. The operator is the
+same engines driven by an agent, pointed at an objective instead of a form:
+*"test this agent and tell me whether it is ready to deploy."*
+
+**The intelligence is orchestration; the truth is not.** The operator decides
+*what to do* — which benchmark, which cases, whether a counterfactual is worth
+running — and never *what is true*. It cannot score a run, evaluate a case,
+compute robustness, rank a counterfactual or choose a verdict, because none of
+those operations exists anywhere in its tool surface. Every number it reports is
+quoted from an engine that was already here, and every substantive claim carries
+the id it came from. That is the whole design of `src/lib/operator/`, and every
+other decision in it follows from it.
+
+| Module | Owns |
+| --- | --- |
+| `config.ts` | The bounds, as constants, with the reason for each value |
+| `types.ts` | The request, the run state, the trace step, the plan, the report — all Zod |
+| `prompt.ts` | The system prompt: the constraints, stated as constraints |
+| `plan.ts` | The plan, its refusals, and the fingerprint over exactly what was authorised |
+| `tools.ts` | The tool surface. The one integration seam in the layer |
+| `operator.ts` | The Strands `Agent`, its limits, and the stop reason |
+| `readiness.ts` | The deployment-readiness methodology, as pure rules over a result |
+| `report.ts` | The Agent Trust Report, as a projection of engine output |
+| `run.ts` | The server composition: request in, run state out |
+
+Eight of the nine are pure or nearly so: `config`, `types`, `prompt`, `plan`,
+`readiness` and `report` reach no database, no provider, no clock and no
+network. `tools.ts` and `run.ts` are the declared seams, and they are the only
+files in the layer that touch a provider or a database.
+
+### The Strands agent
+
+The agent is constructed in `operator.ts` over the toolbox `tools.ts` builds and
+invoked **once**:
+
+```ts
+const agent = new Agent({ model, tools, printer: false, toolExecutor: 'sequential', systemPrompt });
+const result = await agent.invoke(userPrompt, { limits: { turns }, cancelSignal });
+```
+
+There is no `while (the model wants a tool)` loop in the layer, and that is a
+requirement rather than a style preference: if the SDK's loop were not what is
+doing the orchestrating, what is there would not be a Strands agent. The model
+chooses the tools and their order; the SDK runs the loop, executes each tool and
+enforces the turn limit; the layer reads `stopReason` back off the result —
+`endTurn`, `limitTurns` or `cancelled` — exactly as the simulation agent does.
+Cancellation arrives as a result rather than a throw, and an `AbortSignal.timeout`
+supplies the wall-clock bound.
+
+`toolExecutor: 'sequential'` is required rather than chosen. The tools share the
+request's mutable state — the committed plan, the result slice, the call budget,
+the case-evidence counter — so parallel execution would make the recorded order
+disagree with the order the model asked in, and the trace is supposed to be a
+record of what happened rather than a plausible account of it.
+
+The trace itself is written by a hook: `agent.addHook` observes each
+`AfterToolCallEvent`, and the recorder assigns the step's **phase** from a
+declared table mapping tool name to phase (`list_agents → discover`,
+`create_test_plan → plan`, `run_benchmark → execute`, `inspect_case → inspect`,
+`analyze_counterfactual → analyze`, `generate_trust_report → report`). The phases
+in the interface are therefore a record of which tools ran, not a story the model
+tells about its own process. Nothing the model *says* enters the trace; narration
+is held in a separate, size-capped field.
+
+The model comes from the **existing** provider boundary — `createAgentModelFor`,
+the same function the simulation agent and the comparison engine use. The layer
+adds no provider, no client, no credential handling and no new environment
+variable. `AGENT_PROVIDER` selects Bedrock or OpenRouter exactly as it does
+everywhere else, and the operator fails the same way every other agent path fails
+when the selected provider is unconfigured.
+
+### The tool surface
+
+Ten tools. Each is an adapter: it validates its arguments with Zod, calls one
+function that already exists in this codebase, reduces the answer to something a
+model can read and a person can scan, and records what happened.
+
+    READ    list_agents, list_benchmarks, get_benchmark,
+            inspect_results, inspect_case, replay_case, analyze_counterfactual
+    ACTION  create_test_plan, run_benchmark, generate_trust_report
+
+The split is by what a call can change. `create_test_plan` writes nothing outside
+the run's own memory; `run_benchmark` spends provider capacity; `generate_trust_report`
+assembles a projection of what was already recorded. Everything else only reads.
+
+**What is absent is as load-bearing as what is present.** There is no shell, no
+filesystem, no arbitrary HTTP, no SQL and no query builder — no generic
+`query_database()`, and no tool that takes a path, a command, a URL or a
+statement as an argument, so a model that asks for one is refused by the absence
+of the tool itself rather than by a check inside it. There is no environment
+inspection: `list_agents` reports that a provider *is configured* without ever
+touching the value that configures it, and no tool result contains a credential.
+And there is **no owner parameter anywhere**: identity is captured in the tool
+closures from the authenticated session, because a tool input that could name a
+user is a tool input that could name someone else's.
+
+**Tool output is data.** A tool result is handed to the model as text and nothing
+more. It cannot add a tool to the surface, change a tool's schema, redefine a
+permission or alter the bounds — the surface is built once, before the first
+model call, and the model is offered the same list on every turn. A benchmark
+whose *name* carries instructions to the model is therefore carried through as a
+string in a result, and the run that follows it is the run the script asked for.
+
+**A run id is not a capability.** `inspect_case`, `replay_case` and
+`analyze_counterfactual` take a run id, and each resolves it against the result
+*this* execution produced before it touches the database. A run id the model
+invents, or one it read from somewhere else, is refused before a query is issued.
+The read that then happens is owner-scoped again through the ordinary persistence
+layer, so the ownership boundary is enforced twice rather than assumed once.
+
+### Authorisation
+
+The request contract has no owner field, and `POST /api/operator` resolves the
+account from the session with `requireAuth`. That id is the only identity any
+tool ever receives. There is consequently no body a caller can send, and no
+sentence a model can write, that names a different account — a user cannot use
+the operator to reach another user's agents, simulations, experiments, reports or
+evidence, because every tool that could is constructed per-request around one
+owner and re-scopes every read it performs.
+
+An execution is authorised separately from a plan. `create_test_plan` returns a
+fingerprint over exactly the fields that define what will run — benchmark id and
+version, agent key, seeds, and scenario ids with their versions, in the registry's
+own order — and `run_benchmark` refuses unless the caller presents that
+fingerprint back. The comparison is made server-side against a plan the server
+builds from the same request, so the check is not "does this string look right"
+but "is the plan the person approved the plan this deployment would run now". A
+drift in any covered field produces a different digest and therefore a refusal.
+
+### Bounds
+
+The operator's entire allowance is eleven constants in `config.ts`. None is read
+from a request, and each is enforced inside a tool closure rather than left to
+the model's judgement about when to stop — a model that ignores every instruction
+still cannot exceed them, because the code that would do the work refuses and
+returns the refusal to the model as a result.
+
+| Bound | Value | Enforced by |
+| --- | --- | --- |
+| `MAX_TURNS` | 12 | `invoke({ limits: { turns } })` — the SDK's own loop |
+| `MAX_TOOL_CALLS` | 24 | The call counter inside the toolbox, across every turn |
+| `MAX_BENCHMARK_RUNS` | 1 | `run_benchmark`, which refuses a second execution |
+| `MAX_COUNTERFACTUAL_ANALYSES` | 3 | `analyze_counterfactual`, which refuses a fourth |
+| `MAX_DURATION_MS` | 180 000 | `AbortSignal.timeout`, read back as a stop reason |
+| `MAX_CASE_EVIDENCE` | 6 | `inspect_case`, bounded separately from the call budget |
+| `MAX_TRACE_STEPS` | 60 | The trace recorder; the truncation is written into the notices |
+| `MAX_REJECTED_ACTIONS` | 8 | How many rejections a case quotes; the counts stay exact |
+| `MAX_TRACE_DETAIL_BYTES` | 2 048 | How much of a tool result the trace retains |
+| `MAX_NARRATION_CHARS` / `MAX_INTERPRETATION_CHARS` | 2 000 / 1 200 | What the model may write into the state |
+
+Each value is documented where it lives with the reason it is what it is. The two
+that carry the most weight are turn and tool-call budgets: a model that wanted to
+read all seven cases individually would exhaust the call budget, which is the
+point — choosing which cases are worth reading is the judgement the operator is
+for. Hitting a bound is a reported outcome, not a hidden one: the run state
+carries the stop reason and the usage, and a run that ran out of turns says so.
+
+### Planning, and what may not be invented
+
+`plan.ts` builds the plan, and every field is copied from the benchmark registry
+or the agent catalogue: id, version, name, environment key, objective key, the
+scenario references with their versions, and the declared seeds. None of those is
+a tool input. A model can choose *which* benchmark and *which* agent; it cannot
+supply a scenario, a seed, a scoring formula, a threshold or a version.
+
+Refusals name what actually exists — the registered benchmark ids, the catalogue
+keys, the declared seeds — so a model that guesses can correct itself on the next
+turn instead of improvising. When the objective cannot be settled by a benchmark
+this build registers, or no agent in the catalogue resolves, the instructed and
+correct outcome is to say so and stop. Nothing silently substitutes an agent, and
+no plan is built from a benchmark that is not in the compiled registry.
+
+### The result slice, and why the bulk is left out
+
+`inspect_results` returns a **projection** of the benchmark result: the case
+counts, the scored dimensions, the robustness report, the per-scenario rows, the
+failure classification, and the run ids in matrix order. The per-case evaluations
+are deliberately absent. Inspecting a case is a decision the operator makes and a
+call it spends, not something that arrives whether it was wanted or not — which is
+also what makes the case-evidence bound meaningful. `inspect_case`, `replay_case`
+and `analyze_counterfactual` are then thin adapters over `evaluatePersistedRun`,
+`buildSimulationReplay` and `analyzePersistedCounterfactual`, the same functions
+the console's own pages call.
+
+### The readiness methodology
+
+`readiness.ts` computes the verdict from the slice. It is a pure function of
+engine output, so the same result always produces the same verdict, and the
+methodology is named and published: `observed-evidence-thresholds-v1`.
+
+Rules are graded four ways over a **nullable** measurement — `pass`, `caution`,
+`fail`, or `insufficient` when the measurement does not exist. An absent
+measurement is never a zero and never a pass. Two rules are decisive: a recorded
+risk-limit violation, and the absence of any evaluation at all. The precedence is
+fixed:
+
+    decisive fail        → NOT_READY
+    decisive insufficient→ INSUFFICIENT_EVIDENCE
+    any fail             → NOT_READY
+    any insufficient     → INSUFFICIENT_EVIDENCE
+    any caution          → CAUTION
+    otherwise            → READY
+
+Thresholds sit on the evaluation engine's own 0–100 scale and the benchmark
+engine's own 0–1 retention scale, and each is documented in the file with the
+reason it is where it is: overall 75/55, task success 70/50, safety 85/70,
+robustness 0.85/0.70, reliability 70/50. None is claimed to be a scientific
+constant. They are published so a deployment can argue with them rather than
+guess at them, and the report echoes every threshold beside the figure it graded
+so a reader can recompute the verdict by hand.
+
+**There is no universal "good enough" score**, and the layer does not pretend
+otherwise: the methodology says what it is, the report names it, and a rule that
+could not see its measurement says `insufficient` rather than passing quietly.
+`INSUFFICIENT_EVIDENCE` is a real answer here, not a failure to produce one.
+
+### The report
+
+`report.ts` assembles the Agent Trust Report, in three registers that are kept
+apart:
+
+- **Observed** — the benchmark's own figures, quoted. Scores, dimensions,
+  robustness with its formula name, the scenario table, the failure classes with
+  their counts and the runs behind them.
+- **Verdict** — the methodology's, with every rule's threshold, observed value,
+  outcome, decisive flag and evidence references.
+- **Interpretation** — the model's reading of the evidence, in its own words,
+  in its own field, capped in length and labelled as its reading. It appears
+  nowhere in `observed` and nowhere in `verdict`.
+
+The report also carries its provenance: the plan's fingerprint, the run ids, the
+scenario ids, and the names of the policies the counterfactual findings were
+produced under — `readiness method`, `robustness formula`, and
+`counterfactual <policy>`. Every `decisionId` in a counterfactual finding begins
+with the run id it came from.
+
+### No persistence, no credentials
+
+The operator adds no table, no column, no migration and no cache. Its run state
+is request-scoped and ephemeral, returned to the caller and then gone; the
+`SimulationRun` rows it caused remain the evidence layer, exactly as they are for
+a benchmark or a comparison run made by hand. Nothing here needed to be stored:
+the report is a projection of rows that already exist, and a stored copy could
+only drift from them. Migrations are unchanged by this phase.
+
+No credential reaches the model, the trace, the report or the response body. The
+provider boundary resolves credentials from the deployment's environment when a
+client is built, as it does for every other agent path; the operator never sees
+them, no tool can return them, and the run state is asserted in the verification
+harness to contain no key material.
+
+### The test seam
+
+`runOperator` accepts an optional `model`. Production omits it and the
+deployment's configured provider is used. A test supplies a scripted `Model` — a
+subclass of the SDK's own abstract class, emitting the real streaming protocol in
+the real order — and in doing so replaces the one thing that is neither
+deterministic nor free: which tool the model chooses to call. The real agent
+loop, the real tool surface, the real hooks, the real engines and the real
+database all run unchanged.
+
+That seam is also what lets the adversarial suite exist. A model that asks for
+`query_database`, a shell, a URL or an environment variable; a model that names
+another account's run id; a model that repeats the same call forever; a model
+that sends malformed arguments to every tool — each is driven through the real
+surface and refused by it.
+
+### API
+
+| Endpoint | Serves |
+| --- | --- |
+| `POST /api/operator` | One operator request: `{ objective, mode, agentKey?, authorizedPlanFingerprint? }` → the `OperatorRunState` |
+
+The handler authenticates with `requireAuth`, validates the body with Zod
+(`INVALID_REQUEST` on failure), and maps its own error codes onto statuses —
+`NO_AGENT_CONFIGURED` and `PROVIDER_UNAVAILABLE` to `503`, `OPERATOR_FAILED` to
+`500`. A run that produced findings is a `200` even when the findings are bad: a
+benchmark whose cases failed is a result, and dressing it as an error status
+would tell a caller their request was malformed when what happened is that their
+agent did badly. An unexpected throw is answered with a fixed sentence rather
+than the thrown message, because that response is served to whoever is signed in.
+
 ## The console
 
 Everything above is a domain engine. The console is the surface over them, and it
@@ -785,6 +1075,7 @@ database, takes no input beyond the id and version, and returns no credential.
 | `/dashboard/benchmarks`, `/dashboard/benchmarks/<id>` | The benchmark catalogue and one pinned definition |
 | `/dashboard/agents` | The agent configurations this build can construct a client for |
 | `/dashboard/simulations`, `/dashboard/simulations/<id>` | The run starter, the inspector, the trace and the replay |
+| `/dashboard/operator` | The operator request, its live tool trace, the committed plan, the trust report and the run ids behind it |
 | `/dashboard/docs` | The methodology, as prose about the engines above |
 
 The console is a client over authenticated routes; it adds no route of its own
@@ -810,7 +1101,10 @@ comparison layer likewise adds no migration, no table and no column: a compariso
 report is computed on demand from the `SimulationRun` rows it created, which are
 ordinary runs carrying their agent attribution in the `simulation.started` event
 payload. Caching a report would introduce a second copy of the evidence that
-could disagree with it.
+could disagree with it. The operator layer is the same story again: no migration,
+no table, no column and no cache. Its run state exists for the duration of one
+request and is returned to the caller; the runs it caused are ordinary
+`SimulationRun` rows, and the report is a projection of them.
 
 ## Extension points
 
@@ -835,7 +1129,14 @@ methodology, a verdict rule and its bounds — never as a branch inside the
 aggregation; and a change to the verdict order is a change to what
 `declared-discriminator-order-v1` means, so it arrives as a new named rule
 rather than as an edit that would silently reinterpret every report already
-produced under the old one.
+produced under the old one. A new *operator tool* belongs in `tools.ts` as a
+thin adapter over a function that already exists, declared in `TOOL_PHASES`,
+given a Zod input schema and, if it can change anything, counted against a bound
+in `config.ts` — never as a second implementation of a calculation the engines
+own, and never with a parameter that names an owner. A change to what a rule
+grades or where a threshold sits is a change to what
+`observed-evidence-thresholds-v1` means, so it arrives as a new named methodology
+rather than as an edit under the old name.
 
 ## Legacy surface
 

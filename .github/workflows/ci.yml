@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: lint · test · build · typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Node 22 is required: the Agent Twin provider signs its Amazon Bedrock
+      # requests with the AWS SDK, which needs the Node runtime and Node >= 22.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Every gate runs even if an earlier one fails, so one red build shows
+      # every problem at once. The final step is what fails the job.
+      - name: Lint
+        id: lint
+        if: always()
+        continue-on-error: true
+        run: npm run lint
+
+      # Unit tests never call Bedrock and never need AWS credentials: the
+      # provider is mocked at its own boundary.
+      - name: Test
+        id: test
+        if: always()
+        continue-on-error: true
+        run: npm run test
+
+      # The build needs no AWS credentials either: the Bedrock client is
+      # constructed per turn at request time, never at module load.
+      - name: Build
+        id: build
+        if: always()
+        continue-on-error: true
+        env:
+          SKIP_ENV_VALIDATION: '1'
+        run: npm run build
+
+      # After the build on purpose: tsconfig.json includes .next/types, where
+      # Next generates route-handler and page prop types. Running tsc before a
+      # build silently skips them.
+      - name: Typecheck
+        id: typecheck
+        if: always()
+        continue-on-error: true
+        run: npm run typecheck
+
+      - name: Check every gate passed
+        if: always()
+        run: |
+          status=0
+          for gate in \
+            "lint:${{ steps.lint.outcome }}" \
+            "test:${{ steps.test.outcome }}" \
+            "build:${{ steps.build.outcome }}" \
+            "typecheck:${{ steps.typecheck.outcome }}"
+          do
+            name="${gate%%:*}"
+            outcome="${gate#*:}"
+            echo "${name}: ${outcome}"
+            if [ "${outcome}" != "success" ]; then
+              status=1
+            fi
+          done
+          exit "${status}"

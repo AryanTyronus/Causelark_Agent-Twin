@@ -1,6 +1,7 @@
 // @polsia:user-owned — deterministic Agent Twin domain coverage.
-// Provider calls are intentionally not made in unit tests; deployed proxy auth
-// is an external boundary and is exercised by the request-driven route.
+// Provider calls are intentionally not made in unit tests; Amazon Bedrock and
+// the AWS credential provider chain are an external boundary, exercised by the
+// request-driven route against real credentials.
 
 import { describe, expect, it } from 'vitest';
 import { createInitialSimulationState, evaluateSimulationAction } from '@/lib/business/simulation';

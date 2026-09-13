@@ -33,6 +33,21 @@ export const env = createEnv({
     POLSIA_API_KEY: z.string().min(1).optional(),
     POLSIA_API_TOKEN: z.string().min(1).optional(),
     // @polsia:contrib ai end
+    BEDROCK_MODEL_ID: z.string().min(1).optional(),
+    BEDROCK_REGION: z.string().min(1).optional(),
+    AWS_REGION: z.string().min(1).optional(),
+    // @polsia:contrib agent-twin-provider start
+    // Which model provider backs the Agent Twin agent path. Selection is
+    // explicit: an unrecognised value fails the turn rather than silently
+    // switching providers. Unset defaults to `bedrock`, the intended AWS
+    // provider, so existing deployments keep their behaviour.
+    AGENT_PROVIDER: z.enum(['bedrock', 'agentrouter']).optional(),
+    // AgentRouter is the development provider (OpenAI-compatible). These are
+    // server-side only — the API key is never bundled into client code.
+    AGENTROUTER_BASE_URL: z.string().url().optional(),
+    AGENTROUTER_API_KEY: z.string().min(1).optional(),
+    AGENTROUTER_MODEL: z.string().min(1).optional(),
+    // @polsia:contrib agent-twin-provider end
     // @polsia:slot env_vars_server end
   },
 
@@ -64,6 +79,15 @@ export const env = createEnv({
     POLSIA_API_KEY: process.env.POLSIA_API_KEY,
     POLSIA_API_TOKEN: process.env.POLSIA_API_TOKEN,
     // @polsia:contrib ai end
+    BEDROCK_MODEL_ID: process.env.BEDROCK_MODEL_ID,
+    BEDROCK_REGION: process.env.BEDROCK_REGION,
+    AWS_REGION: process.env.AWS_REGION,
+    // @polsia:contrib agent-twin-provider start
+    AGENT_PROVIDER: process.env.AGENT_PROVIDER,
+    AGENTROUTER_BASE_URL: process.env.AGENTROUTER_BASE_URL,
+    AGENTROUTER_API_KEY: process.env.AGENTROUTER_API_KEY,
+    AGENTROUTER_MODEL: process.env.AGENTROUTER_MODEL,
+    // @polsia:contrib agent-twin-provider end
     // @polsia:slot env_runtime end
   },
   emptyStringAsUndefined: true,

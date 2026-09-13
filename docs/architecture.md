@@ -9,12 +9,35 @@ initial state, and advances through a request-driven `agent-step` endpoint.
 - The pure resource environment in `src/lib/business/simulation.ts` owns state,
   permissions, budget, task requirements, validation, rejection reasons, and
   terminal status. It has no database or provider imports.
-- `src/lib/agent/provider.ts` is the replaceable provider boundary. The current
-  runtime uses the official Strands Agents TypeScript SDK's OpenAI-compatible
-  model adapter pointed at the Polsia AI proxy (`POLSIA_AI_BASE_URL` and
-  `POLSIA_API_KEY`). It does not call Amazon Bedrock, a direct model-vendor
-  endpoint, or customer AWS credentials. The proxy chooses the underlying
-  model.
+- `src/lib/agent/provider.ts` is the replaceable provider boundary. The runtime
+  uses the official Strands Agents TypeScript SDK with one of two selectable
+  model clients, both from that SDK: `BedrockModel`
+  (`@strands-agents/sdk/models/bedrock`), which drives the Amazon Bedrock
+  Converse API through `@aws-sdk/client-bedrock-runtime` and is the intended
+  production/hackathon provider; and `OpenAIModel`
+  (`@strands-agents/sdk/models/openai`) in Chat Completions mode, which points at
+  AgentRouter and exists so the Agent Twin can run locally before AWS credentials
+  are available. Nothing else in `src/lib/agent/**` constructs a model client,
+  and no agent-path module imports the raw `openai` package or the Polsia AI
+  proxy.
+- Provider selection is `AGENT_PROVIDER`: `bedrock` (default) or `agentrouter`.
+  It is explicit and never falls back — an unrecognised value fails the turn with
+  a visible configuration error rather than quietly running the other provider.
+  Because the same bounded Strands agent, the same allow-listed tools, and the
+  same validator sit behind both, tool calling, action validation, persistence,
+  metrics and replay are provider-independent; only the model client and the
+  provider label persisted with each turn differ.
+- Bedrock credentials are never application env vars. The AWS SDK resolves them
+  through its standard credential provider chain (environment, shared config and
+  credentials files, SSO, container and instance metadata, web identity), and
+  the deployment identity needs `bedrock:InvokeModel` /
+  `bedrock:InvokeModelWithResponseStream` on the configured model. Model ID and
+  region are configuration, not code: `BEDROCK_MODEL_ID` (required),
+  `BEDROCK_REGION`, then `AWS_REGION`. The AgentRouter key is server-only
+  configuration (`AGENTROUTER_API_KEY`, with optional `AGENTROUTER_BASE_URL`
+  defaulting to `https://agentrouter.org/v1` and `AGENTROUTER_MODEL` defaulting
+  to `deepseek-v4-flash`); it is passed to the model client and is never sent to
+  the browser, persisted with a turn, or written to a log.
 - `resource-tools.ts` exposes only `observe_resources` and `request_action`.
   Tool inputs are schema-validated, and every result passes through the same
   deterministic environment validator as the manual operator path.
@@ -23,25 +46,60 @@ initial state, and advances through a request-driven `agent-step` endpoint.
   then releases the claim. There is no in-process worker loop.
 - API handlers are the security boundary. They authenticate and scope every
   read/write to the signed-in owner. Client islands read only through typed
-  `apiFetch` contracts.
+  `apiFetch` contracts. The `agent-step` route declares
+  `export const runtime = 'nodejs'` because the AWS SDK, its credential chain,
+  and SigV4 signing require Node APIs.
+
+## Bounded multi-step execution
+
+One request still means one turn, but a turn may contain several observed
+iterations — observe → act → observe the result → act again — up to two
+independent limits:
+
+- an **action allowance** on `request_action` (default 3 per turn). Once spent,
+  further requests are refused with a reason and the environment state is left
+  untouched, so the attempt is still recorded without any transition.
+- a **model-call allowance** derived from the action allowance
+  (`resolveAgentLoopTurns`) and hard-capped by `MAX_AGENT_LOOP_TURNS`, passed to
+  the SDK as `limits.turns`. Wall-clock time is separately bounded by
+  `configuration.toolTimeoutMs` via an abort signal; an aborted invocation is
+  read back as a timeout rather than recorded as a completed turn.
+
+Tools are executed sequentially (`toolExecutor: 'sequential'`) because they
+share one mutable environment copy. Only an accepted transition moves that copy,
+and the accepted state is what gets persisted — the simulation remains the
+source of truth.
 
 ## Observable trace
 
 The trace stores simulation start, observations, turn metadata, tool request and
-result records, action validation or rejection, state-change diffs, task
-progress, errors, and terminal outcome. It never stores prompts, hidden state,
-private chain-of-thought, or raw provider reasoning. Metrics are calculated from
-persisted actions/events, and replay frames are reconstructed from persisted
-state transitions.
+result records (including per-call latency), action validation or rejection,
+state-change diffs, task progress, errors, and terminal outcome. It never stores
+prompts, hidden state, private chain-of-thought, or raw provider reasoning. A
+failed turn is recorded at the step the run actually reached. Metrics are
+calculated from persisted actions/events, and replay frames are reconstructed
+from persisted state transitions.
 
 ## Determinism and failure states
 
 The same environment configuration and seed produce the same initial state and
-transition results. The provider decision path is intentionally labelled
-variable: a same-seed rerun proves environment determinism, not identical model
-choices. Missing proxy configuration, malformed tool calls, provider errors,
-timeouts, invalid actions, concurrency conflicts, and terminal limits become
-persisted recovery/failure states rather than silent browser errors.
+transition results, so replaying the persisted action sequence from that seed
+reproduces the persisted final state exactly. The provider decision path is
+intentionally labelled variable: a same-seed rerun proves environment
+determinism, not identical model choices. Missing model or credential
+configuration, provider access denial, throttling, timeouts, invalid or malformed
+action inputs, concurrency conflicts, and terminal limits become persisted
+recovery/failure states rather than silent browser errors. Provider failures are
+normalized into fixed safe codes and messages, worded for the provider that was
+actually selected; SDK error text, identifiers, request bodies, authorization
+headers, and credentials never reach the client or the logs.
+
+## Persistence
+
+Simulation tables are app-owned. They are created by a forward-only, purely
+additive user-owned migration
+(`prisma/migrations/20260912000000_add_simulation_tables`); the framework-owned
+better-auth migrations and `migration_lock.toml` are untouched.
 
 ## Extension points
 
@@ -49,3 +107,11 @@ The contracts leave room for adversarial scenarios, counterfactual transitions,
 safety evaluations, multi-agent environments, and benchmark suites. New tools
 must remain allow-listed and observable; new model providers should implement
 the adapter boundary without changing environment or persistence semantics.
+
+## Legacy surface
+
+The framework's own `ai` module (`src/lib/ai/client.ts`,
+`src/app/api/ai/chat/route.ts`) still calls the Polsia AI proxy and reads
+`POLSIA_AI_BASE_URL` / `POLSIA_API_KEY` / `POLSIA_API_TOKEN`. It is unrelated to
+the Agent Twin and is intentionally left in place; the Agent Twin path does not
+import it.

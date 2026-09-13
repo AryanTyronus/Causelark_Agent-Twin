@@ -4,7 +4,7 @@
   "private": true,
   "description": "Polsia Next.js template with the shadcn UI baseline built in",
   "engines": {
-    "node": ">=20.18.1"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "next dev",
@@ -16,8 +16,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:generate": "prisma generate",
-    "db:migrate:dev": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev --config prisma.migrate.config.ts",
+    "db:migrate:deploy": "prisma migrate deploy --config prisma.migrate.config.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
   },

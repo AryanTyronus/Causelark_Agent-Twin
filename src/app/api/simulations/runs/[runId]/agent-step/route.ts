@@ -1,4 +1,4 @@
-// @polsia:user-owned — authenticated, one-turn Agent Twin endpoint.
+// @polsia:user-owned — authenticated, one bounded Agent Twin turn.
 import 'server-only';
 
 import { NextResponse } from 'next/server';
@@ -6,6 +6,9 @@ import { runTurn, TurnConflictError } from '@/lib/agent/run-turn';
 import { SimulationAgentStepResult } from '@/lib/contracts/simulation';
 import { requireAuth, type SessionUser } from '@/lib/require-auth';
 
+// The Agent Twin provider is the Strands Agents SDK on Amazon Bedrock: the AWS
+// SDK, its credential provider chain, and SigV4 signing all require Node APIs.
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request, { params }: { params: Promise<{ runId: string }> }) {

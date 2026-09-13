@@ -45,7 +45,10 @@ export const DEFAULT_CONFIGURATION: SimulationConfigurationType = {
   budget: 24,
   maxSteps: 12,
   maxTurns: 12,
-  toolTimeoutMs: 8000,
+  // Wall-clock budget for one bounded agent turn. A single turn now performs
+  // several model calls plus tool calls against Amazon Bedrock, so the budget
+  // has to cover the whole observe → act → observe cycle, not one round trip.
+  toolTimeoutMs: 30000,
 };
 const ENVIRONMENT_KEY: SimulationEnvironmentKeyType = 'resource-routing';
 const SUPPORTED_SEEDS = [1042, 2048, 4242, 9182];

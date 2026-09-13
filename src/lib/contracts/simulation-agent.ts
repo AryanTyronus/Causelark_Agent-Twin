@@ -14,6 +14,8 @@ export const SimulationAgentToolOutcome = z.object({
   output: z.record(z.string(), z.unknown()).nullable(),
   status: z.enum(['SUCCEEDED', 'REJECTED', 'ERROR']),
   validationReason: z.string().nullable(),
+  /** Wall-clock duration of the tool execution, persisted on the tool-call record. */
+  latencyMs: z.number().int().nonnegative().nullable().default(null),
   stateBefore: SimulationState,
   stateAfter: SimulationState,
 });

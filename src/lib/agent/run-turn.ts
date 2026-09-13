@@ -3,12 +3,14 @@
 import 'server-only';
 
 import type { Prisma } from '@prisma/client';
-import { AgentProviderError } from '@/lib/agent/provider';
+import { AgentProviderError, selectedProviderLabel } from '@/lib/agent/provider';
 import { runResourceAgentTurn } from '@/lib/agent/resource-agent';
+import { DEFAULT_MAX_ACTIONS_PER_TURN } from '@/lib/agent/resource-tools';
 import { getSimulationOptions, getSimulationStatus } from '@/lib/business/simulation';
 import { jsonValue, loadRun, toDetail } from '@/lib/business/simulation-persistence';
-import { SimulationState } from '@/lib/contracts/simulation';
+import { SimulationConfiguration, SimulationState } from '@/lib/contracts/simulation';
 import { prisma } from '@/lib/db';
+import { env } from '@/lib/env';
 
 export class TurnConflictError extends Error {
   constructor() {
@@ -33,18 +35,22 @@ export async function runTurn(runId: string, ownerId: string) {
     if (!run) throw new TurnConflictError();
     const state = SimulationState.parse(run.state);
     const options = getSimulationOptions();
+    // The run's own persisted configuration governs its turn budget, not the
+    // catalogue default the run may have overridden at creation time.
+    const configuration = SimulationConfiguration.parse(run.configuration ?? options.configuration);
     const objective = options.objectives.find((item) => item.key === run.objectiveKey)?.description;
     if (!objective)
       throw new AgentProviderError('provider_error', 'Simulation objective is unavailable.');
     const agentRun = await runResourceAgentTurn({
       objective,
       state,
-      timeoutMs: options.configuration.toolTimeoutMs,
+      timeoutMs: configuration.toolTimeoutMs,
+      maxActionsPerTurn: DEFAULT_MAX_ACTIONS_PER_TURN,
     });
     const outcomes = agentRun.toolbox.getOutcomes();
     const finalState = agentRun.toolbox.getState();
     const statusResult = getSimulationStatus(finalState);
-    const turnLimitReached = run.turnCount + 1 >= (run.maxTurns || options.configuration.maxTurns);
+    const turnLimitReached = run.turnCount + 1 >= (run.maxTurns || configuration.maxTurns);
     const nextStatus =
       statusResult.status === 'RUNNING' && turnLimitReached ? 'LIMIT_REACHED' : statusResult.status;
     const nextReason =
@@ -88,7 +94,7 @@ export async function runTurn(runId: string, ownerId: string) {
       const actionRows: Prisma.SimulationActionCreateManyInput[] = [];
       const toolRows: Prisma.SimulationToolCallCreateManyInput[] = [];
       outcomes.forEach((outcome, index) => {
-        const latencyMs = null;
+        const latencyMs = outcome.latencyMs ?? null;
         const toolStatus = outcome.status === 'SUCCEEDED' ? 'SUCCEEDED' : 'REJECTED';
         toolRows.push({
           id: `${runId}-turn-${run.turnCount + 1}-${index}`,
@@ -169,6 +175,7 @@ export async function runTurn(runId: string, ownerId: string) {
           inputTokens: agentRun.provider.metadata.inputTokens,
           outputTokens: agentRun.provider.metadata.outputTokens,
           toolCalls: outcomes.length,
+          stopReason: agentRun.provider.stopReason,
         },
         finalState.step,
       );
@@ -229,11 +236,16 @@ export async function runTurn(runId: string, ownerId: string) {
     const status = isProviderError && errorKind(error) === 'TIMEOUT' ? 'TIMEOUT' : 'ERROR';
     await prisma.$transaction(async (tx) => {
       const sequence = await tx.simulationEvent.count({ where: { runId } });
+      // The failure belongs to the step the run actually reached, not step 0.
+      const currentRun = await tx.simulationRun.findFirst({
+        where: { id: runId, ownerId },
+        select: { step: true },
+      });
       await tx.simulationEvent.create({
         data: {
           runId,
           sequence,
-          step: 0,
+          step: currentRun?.step ?? 0,
           kind: 'agent.error',
           source: 'agent',
           summary: message,
@@ -262,7 +274,9 @@ export async function runTurn(runId: string, ownerId: string) {
       run: toDetail(failedRun),
       turn: {
         status: 'FAILED' as const,
-        provider: 'Polsia AI proxy · Strands Agents SDK',
+        // The turn must name the provider it was actually attempting, including
+        // when the provider selection itself was what failed.
+        provider: selectedProviderLabel(env),
         toolCalls: 0,
         acceptedActions: 0,
         safeError: message,

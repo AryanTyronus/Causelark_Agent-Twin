@@ -1,5 +1,10 @@
 // @polsia:user-owned — deterministic simulation persistence. The auth User is
 // referenced by scalar ownerId only; do not add a relation to the locked model.
+//
+// `scenarioId` / `scenarioVersion` record the scenario a run was created under,
+// or stay null for a run created without one. Only identity is stored: the world
+// the scenario produced is already in `state` and `initialState`, and the
+// per-field record of what changed is in the `scenario.applied` event payload.
 
 model SimulationRun {
   id                String             @id @default(cuid())
@@ -7,6 +12,8 @@ model SimulationRun {
   environmentKey    String
   objectiveKey      String
   seed              Int
+  scenarioId        String?
+  scenarioVersion   Int?
   status            String
   agentStatus       String             @default("READY")
   step              Int                @default(0)

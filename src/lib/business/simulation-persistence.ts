@@ -16,6 +16,7 @@ import {
   SimulationConfiguration,
   SimulationEvent as SimulationEventSchema,
   SimulationRunDetail,
+  type SimulationScenarioIdentity,
   SimulationState,
   SimulationToolCall as SimulationToolCallSchema,
 } from '@/lib/contracts/simulation';
@@ -31,6 +32,20 @@ export function jsonValue(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
+/**
+ * The scenario a run was created under, or `null` when it had none.
+ *
+ * Both columns are written together and neither is meaningful alone, so a row
+ * missing either is treated as unscenarioed rather than being reported as a
+ * half-identified condition.
+ */
+export function toScenarioIdentity(
+  run: Pick<SimulationRun, 'scenarioId' | 'scenarioVersion'>,
+): SimulationScenarioIdentity | null {
+  if (run.scenarioId == null || run.scenarioVersion == null) return null;
+  return { id: run.scenarioId, version: run.scenarioVersion };
+}
+
 export function toSummary(run: SimulationRun) {
   const state = SimulationState.parse(run.state);
   return {
@@ -43,6 +58,7 @@ export function toSummary(run: SimulationRun) {
     step: run.step,
     maxSteps: state.maxSteps,
     budgetRemaining: state.budgetRemaining,
+    scenario: toScenarioIdentity(run),
     terminationReason: run.terminationReason,
     failureDetails: run.failureDetails,
     createdAt: run.createdAt.toISOString(),

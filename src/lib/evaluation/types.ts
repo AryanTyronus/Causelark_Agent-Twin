@@ -10,6 +10,7 @@ import {
   type SimulationActionRecord,
   type SimulationEvent,
   SimulationRunStatus,
+  type SimulationScenarioIdentity,
   type SimulationState,
   type SimulationToolCall,
 } from '@/lib/contracts/simulation';
@@ -54,6 +55,13 @@ export interface EvaluationInput {
   turnCount: number;
   maxTurns: number;
   terminationReason: string | null;
+  /**
+   * The scenario the run was created under, or `null`/absent for a run created
+   * without one. Context only: it is echoed into the result so a verdict can be
+   * attributed to a condition. No category reads it, so scoring is identical
+   * whether a run was scenarioed or not.
+   */
+  scenario?: SimulationScenarioIdentity | null;
 }
 
 /**
@@ -120,6 +128,15 @@ export type EvaluationCategoryScore = z.infer<typeof EvaluationCategoryScore>;
 export const EvaluationResult = z.object({
   runId: z.string().min(1),
   status: SimulationRunStatus,
+  /**
+   * The condition the run was evaluated under. Defaulted rather than required so
+   * an evidence set that predates scenarios still produces a verdict, and so a
+   * caller cannot infer "baseline" from its absence.
+   */
+  scenario: z
+    .object({ id: z.string().min(1), version: z.number().int().positive() })
+    .nullable()
+    .default(null),
   terminationReason: z.string().nullable(),
   categories: z.array(EvaluationCategoryScore),
   overallScore: z.number().min(0).max(100),

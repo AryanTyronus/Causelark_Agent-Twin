@@ -57,6 +57,32 @@ One environment is implemented: **Resource routing** — balance energy, materia
 
 The environment is a pure deterministic transition function: it holds no I/O, no randomness, and no clock. Given a seed and an action sequence, the resulting state is fully determined by code in `src/lib/business/simulation.ts`.
 
+## Scenarios
+
+A scenario is a deterministic environmental condition: the same agent, in the same environment, evaluated under a controlled perturbation of it. It answers the question the baseline alone cannot — *how does this agent behave when the environment changes?*
+
+A scenario is an id, a version, and an ordered list of declarative modifiers drawn from a closed vocabulary: `resource-reduction`, `resource-outage`, `budget-reduction`, `risk-increase`, `max-steps-reduction`, `permission-revocation`. It is **data, never code** — no expressions, no scripts, nothing executable — so a `scenarioId` sent to the API can only resolve to a definition that shipped with the code. The seven shipped scenarios are versioned definitions over the environment's own published constants rather than invented numbers.
+
+| Scenario | What it changes |
+| --- | --- |
+| `baseline` | Nothing — the control condition, recorded explicitly |
+| `resource-scarcity` | Reduces energy, materials and water at their starting stock |
+| `budget-pressure` | Reduces the run's budget, in both state and configuration |
+| `elevated-risk` | Raises starting risk, never past the environment's maximum |
+| `resource-outage` | Puts one resource at zero and publishes the outage as a constraint |
+| `tight-step-limit` | Halves the step limit, in both state and configuration |
+| `action-rejection` | Revokes one action type, in the environment's own permission list |
+
+Three properties make the comparison meaningful:
+
+- **Deterministic.** The scenario layer reads no clock, no randomness and no environment variable, and it never touches the seed. Versions are integers, not timestamps, so a run recorded as `resource-scarcity@1` still resolves to exactly the world that produced it. The same scenario, seed and baseline start the same world every time.
+- **Applied before the agent acts.** A scenario is applied at initialisation, so the run starts inside the condition and the agent cannot act before it is in force.
+- **Validation is unchanged.** Nothing in the scenario layer can accept or reject an action. `action-rejection` removes an entry from the environment's permission list, and the refusal the agent meets is the environment's ordinary `PERMISSION_DENIED` from `evaluateSimulationAction` — the same validator that guards every other run.
+
+Every change is explicit and attributable. A run stores the scenario id and version it was created under, and the trace records a `scenario.applied` system event — never an agent action — carrying a change record per field touched: `{"field":"budgetRemaining","before":24,"after":14,"modifier":"budget-reduction"}`. A rerun pins the recorded version rather than re-resolving the id, so a later edit to a definition cannot silently change what reproducing a run means. Evaluation carries the scenario as context only: the verdict for the same evidence is identical with or without it.
+
+`GET /api/scenarios` lists the catalogue; run creation accepts an optional `scenarioId`. No LLM generates scenarios, there is no scenario UI, and Phase 2 adds no scenario-specific scoring.
+
 ## Agent Runtime
 
 The agent runtime is the official Strands Agents TypeScript SDK (`@strands-agents/sdk`). An `Agent` is constructed per turn with a system prompt, an allow-listed toolbox, `toolExecutor: 'sequential'`, an explicit turn limit, and a cancellation signal.
@@ -162,6 +188,8 @@ UI
  ↓
 Next.js API
  ↓
+Scenario resolution (deterministic environmental condition)
+ ↓
 Agent orchestration
  ↓
 Strands Agents
@@ -263,16 +291,18 @@ Latest local verification, on the current working tree:
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Tests | `npm run test` | 330 tests passing (17 test files) |
-| Lint | `npm run lint` | Passing (154 files checked) |
-| Build | `SKIP_ENV_VALIDATION=1 npm run build` | Passing |
+| Tests | `npm run test` | 433 tests passing (20 test files) |
+| Lint | `npm run lint` | Passing (164 files checked) |
+| Build | `npm run build` | Passing |
 | Typecheck | `npm run typecheck` | Passing |
 
-Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, and the evaluation engine's scoring, determinism, purity and bounds. Migration deployment was verified separately against a fresh disposable PostgreSQL database: all three migrations apply, including the simulation tables, with no schema drift.
+Coverage includes the deterministic simulation and its validation rules, the agent turn lifecycle, tool boundaries, provider selection and error classification, the client/server contracts, the evaluation engine's scoring, determinism, purity and bounds, and the scenario engine — its catalogue, each shipped scenario, validation and refusal, immutability, determinism, modifier ordering and versioning, plus its boundaries (no clock, randomness, provider, database or dynamic discovery) and its integration across run creation, persistence, trace, agent tools, replay and evaluation. Migration deployment was verified separately against a fresh disposable PostgreSQL database: all four migrations apply, including the simulation tables and the scenario-identity columns, with no schema drift.
 
 The evaluation engine was additionally exercised against the runs persisted in a local development database — including one agent-driven run that reached `COMPLETED` and one that terminated `TIMEOUT` — to confirm it evaluates real evidence without re-simulation and returns identical verdicts on repeated evaluation. That check is not part of the suite, which stays independent of any database.
 
 **Live provider verification.** OpenRouter has been exercised end-to-end against a live endpoint, including an agent-driven run that completed the Resource Routing objective. That boundary is not part of this suite, which stays offline and credential-free: the live runs were made against a local development database, and provider latency and timeouts remain an expected failure mode rather than something the suite rules out. Bedrock has not been exercised against a live AWS Bedrock endpoint. See Project Status.
+
+Separately, during scenario-engine verification (2026-09-13) the OpenRouter key configured in that local environment was rejected with HTTP 401, so that verification ran no live agent turn: the agent path inside a scenario-modified world was exercised deterministically through the tool surface instead, and the scenario-engine work is not claimed to have been validated against a live model.
 
 ## Project Status
 
@@ -286,11 +316,14 @@ The evaluation engine was additionally exercised against the runs persisted in a
 - Metrics derived from persisted state and Strands run metrics
 - Replay reconstruction and a rerun determinism check
 - Evidence-based evaluation engine: five weighted dimensions scored from persisted evidence, with no LLM judge, no randomness, no clock and no mutation of the simulation
+- Scenario & adversarial engine: seven versioned, declarative environmental conditions applied deterministically before a run starts, with per-field change records and no new scoring
+- Scenario identity persisted with each run and recorded as a `scenario.applied` system event, with reruns pinned to the recorded version
+- `GET /api/scenarios` serving the catalogue, and an optional `scenarioId` on run creation
 - `GET /api/simulations/runs/<runId>/evaluation` serving the verdict alongside the raw metric set behind it
 - Dashboard run starter and run inspector
 - Provider error classification, with no credential or raw-response persistence
-- Local verification gates green: 330 tests, lint, production build, typecheck
-- Migration deployment verified against a fresh disposable PostgreSQL database
+- Local verification gates green: 433 tests, lint, production build, typecheck
+- Migration deployment verified against a fresh disposable PostgreSQL database, with no schema drift
 
 ### Provider verification
 
@@ -307,10 +340,11 @@ OpenRouter has been exercised end-to-end against a live endpoint. A separate liv
 
 None of the following is implemented. They are listed to mark direction, not capability:
 
-- Adversarial scenarios that deliberately pressure the agent toward unsafe or degenerate behaviour
+- LLM-generated or automatically discovered scenarios, and a scenario editor UI
+- Batch benchmark execution, cross-run comparison, and pass/fail thresholds built on the evaluation scores
+- A robustness score across conditions, and scenario-specific scoring
 - Counterfactual and branching simulations that fork a run from a checkpoint
-- Pass/fail thresholds and cross-run comparison built on the evaluation scores
-- Agent benchmarking across models and configurations on fixed seeds
+- Agent benchmarking across models and configurations on fixed seeds, and a comparison dashboard
 - Additional professional environments beyond resource routing
 
 ## Hackathon

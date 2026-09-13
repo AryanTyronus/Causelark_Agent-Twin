@@ -67,6 +67,7 @@ function summaryFromRun(run: SimulationRunDetail): SimulationRunSummary {
     step: run.step,
     maxSteps: run.maxSteps,
     budgetRemaining: run.budgetRemaining,
+    scenario: run.scenario,
     terminationReason: run.terminationReason,
     failureDetails: run.failureDetails,
     createdAt: run.createdAt,

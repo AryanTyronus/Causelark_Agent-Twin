@@ -2,11 +2,7 @@
 import 'server-only';
 
 import { NextResponse } from 'next/server';
-import {
-  createInitialSimulationState,
-  DEFAULT_CONFIGURATION,
-  isSupportedSeed,
-} from '@/lib/business/simulation';
+import { DEFAULT_CONFIGURATION, isSupportedSeed } from '@/lib/business/simulation';
 import { jsonValue, toDetail, toSummary } from '@/lib/business/simulation-persistence';
 import {
   SimulationRunDetail,
@@ -15,6 +11,11 @@ import {
 } from '@/lib/contracts/simulation';
 import { prisma } from '@/lib/db';
 import { requireAuth, type SessionUser } from '@/lib/require-auth';
+import {
+  describeScenarioApplication,
+  initializeScenarioRun,
+  ScenarioError,
+} from '@/lib/scenarios/scenario';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,12 +75,18 @@ export async function POST(req: Request) {
     );
   try {
     const configuration = { ...DEFAULT_CONFIGURATION, ...parsed.data.configuration };
-    const state = createInitialSimulationState(
-      parsed.data.environmentKey,
-      parsed.data.objectiveKey,
-      parsed.data.seed,
+    // The scenario is resolved from the server-side catalogue and applied here,
+    // before the run row exists: an unknown id is a bad request, not a run that
+    // silently starts unperturbed.
+    const initialization = initializeScenarioRun({
+      environmentKey: parsed.data.environmentKey,
+      objectiveKey: parsed.data.objectiveKey,
+      seed: parsed.data.seed,
       configuration,
-    );
+      scenarioId: parsed.data.scenarioId ?? null,
+    });
+    const scenarioEvent = describeScenarioApplication(initialization);
+    const state = initialization.state;
     const created = await prisma.$transaction(async (tx) => {
       const run = await tx.simulationRun.create({
         data: {
@@ -87,16 +94,18 @@ export async function POST(req: Request) {
           environmentKey: parsed.data.environmentKey,
           objectiveKey: parsed.data.objectiveKey,
           seed: parsed.data.seed,
+          scenarioId: initialization.scenario?.id ?? null,
+          scenarioVersion: initialization.scenario?.version ?? null,
           status: 'RUNNING',
           agentStatus: 'READY',
           step: 0,
           state: jsonValue(state),
           initialState: jsonValue(state),
-          configuration: jsonValue(configuration),
+          configuration: jsonValue(initialization.configuration),
           tasks: jsonValue(state.tasks),
           constraints: jsonValue(state.constraints),
-          budgetLimit: configuration.budget,
-          maxTurns: configuration.maxTurns,
+          budgetLimit: initialization.configuration.budget,
+          maxTurns: initialization.configuration.maxTurns,
         },
       });
       await tx.simulationEvent.createMany({
@@ -112,11 +121,33 @@ export async function POST(req: Request) {
               environmentKey: run.environmentKey,
               objectiveKey: run.objectiveKey,
               seed: run.seed,
+              ...(initialization.scenario
+                ? {
+                    scenarioId: initialization.scenario.id,
+                    scenarioVersion: initialization.scenario.version,
+                  }
+                : {}),
             }),
           },
+          // Between the run starting and its first observation, so the trace
+          // reads: created → scenario applied → observed. Absent entirely for a
+          // run with no scenario, which keeps that trace exactly as it was.
+          ...(scenarioEvent
+            ? [
+                {
+                  runId: run.id,
+                  sequence: 1,
+                  step: 0,
+                  kind: 'scenario.applied',
+                  source: 'system',
+                  summary: scenarioEvent.summary,
+                  payload: jsonValue(scenarioEvent.payload),
+                },
+              ]
+            : []),
           {
             runId: run.id,
-            sequence: 1,
+            sequence: scenarioEvent ? 2 : 1,
             step: 0,
             kind: 'observation.created',
             source: 'system',
@@ -132,7 +163,9 @@ export async function POST(req: Request) {
     });
     if (!created) return NextResponse.json({ error: 'Run could not be created.' }, { status: 500 });
     return NextResponse.json(SimulationRunDetail.parse(toDetail(created)), { status: 201 });
-  } catch {
+  } catch (error) {
+    if (error instanceof ScenarioError)
+      return NextResponse.json({ errors: { scenarioId: error.message } }, { status: 400 });
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

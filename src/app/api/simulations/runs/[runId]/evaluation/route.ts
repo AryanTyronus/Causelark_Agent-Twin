@@ -3,7 +3,13 @@ import 'server-only';
 
 import { NextResponse } from 'next/server';
 import { DEFAULT_CONFIGURATION } from '@/lib/business/simulation';
-import { loadRun, toAction, toEvent, toToolCall } from '@/lib/business/simulation-persistence';
+import {
+  loadRun,
+  toAction,
+  toEvent,
+  toScenarioIdentity,
+  toToolCall,
+} from '@/lib/business/simulation-persistence';
 import {
   SimulationConfiguration,
   SimulationRunStatus,
@@ -44,6 +50,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ runId: s
       run.maxTurns ||
       SimulationConfiguration.parse(run.configuration ?? DEFAULT_CONFIGURATION).maxTurns,
     terminationReason: run.terminationReason,
+    // Context, not input to a score: it lets a verdict be labelled with the
+    // condition it was measured under.
+    scenario: toScenarioIdentity(run),
   });
 
   return NextResponse.json(

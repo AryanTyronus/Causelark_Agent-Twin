@@ -2,7 +2,7 @@
 import 'server-only';
 
 import { NextResponse } from 'next/server';
-import { createInitialSimulationState, DEFAULT_CONFIGURATION } from '@/lib/business/simulation';
+import { DEFAULT_CONFIGURATION } from '@/lib/business/simulation';
 import { jsonValue, loadRun, toDetail } from '@/lib/business/simulation-persistence';
 import {
   SimulationConfiguration,
@@ -11,6 +11,11 @@ import {
 } from '@/lib/contracts/simulation';
 import { prisma } from '@/lib/db';
 import { requireAuth, type SessionUser } from '@/lib/require-auth';
+import {
+  describeScenarioApplication,
+  initializeScenarioRun,
+  ScenarioError,
+} from '@/lib/scenarios/scenario';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,12 +32,35 @@ export async function POST(req: Request, { params }: { params: Promise<{ runId: 
   const configuration = SimulationConfiguration.parse(
     original.configuration ?? DEFAULT_CONFIGURATION,
   );
-  const state = createInitialSimulationState(
-    original.environmentKey as 'resource-routing',
-    original.objectiveKey as 'complete-delivery' | 'preserve-reserve' | 'stabilise-grid',
-    original.seed,
-    configuration,
-  );
+  let initialization: ReturnType<typeof initializeScenarioRun>;
+  try {
+    // The scenario is replayed from the identity the original run recorded, at
+    // the version it recorded — never from whatever the catalogue holds now. A
+    // rerun must reproduce the original world, not a newer one with the same id.
+    initialization = initializeScenarioRun({
+      environmentKey: original.environmentKey as 'resource-routing',
+      objectiveKey: original.objectiveKey as
+        | 'complete-delivery'
+        | 'preserve-reserve'
+        | 'stabilise-grid',
+      seed: original.seed,
+      configuration,
+      scenarioId: original.scenarioId,
+      scenarioVersion: original.scenarioVersion,
+    });
+  } catch (error) {
+    if (error instanceof ScenarioError)
+      return NextResponse.json(
+        {
+          error: `This run cannot be reproduced: ${error.message}`,
+          code: error.code,
+        },
+        { status: 409 },
+      );
+    throw error;
+  }
+  const scenarioEvent = describeScenarioApplication(initialization);
+  const state = initialization.state;
   const created = await prisma.$transaction(async (tx) => {
     const run = await tx.simulationRun.create({
       data: {
@@ -40,16 +68,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ runId: 
         environmentKey: original.environmentKey,
         objectiveKey: original.objectiveKey,
         seed: original.seed,
+        scenarioId: initialization.scenario?.id ?? null,
+        scenarioVersion: initialization.scenario?.version ?? null,
         status: 'RUNNING',
         agentStatus: 'READY',
         step: 0,
         state: jsonValue(state),
         initialState: jsonValue(state),
-        configuration: jsonValue(configuration),
+        configuration: jsonValue(initialization.configuration),
         tasks: jsonValue(state.tasks),
         constraints: jsonValue(state.constraints),
-        budgetLimit: configuration.budget,
-        maxTurns: configuration.maxTurns,
+        budgetLimit: initialization.configuration.budget,
+        maxTurns: initialization.configuration.maxTurns,
       },
     });
     await tx.simulationEvent.createMany({
@@ -63,9 +93,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ runId: 
           summary: 'Deterministic same-seed rerun started.',
           payload: jsonValue({ rerunOf: original.id, seed: original.seed }),
         },
+        ...(scenarioEvent
+          ? [
+              {
+                runId: run.id,
+                sequence: 1,
+                step: 0,
+                kind: 'scenario.applied',
+                source: 'system',
+                summary: scenarioEvent.summary,
+                payload: jsonValue(scenarioEvent.payload),
+              },
+            ]
+          : []),
         {
           runId: run.id,
-          sequence: 1,
+          sequence: scenarioEvent ? 2 : 1,
           step: 0,
           kind: 'observation.created',
           source: 'system',

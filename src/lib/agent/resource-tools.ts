@@ -54,7 +54,10 @@ export function createResourceTools(
       const output = {
         objective,
         state: currentState,
-        availableActions: ['harvest', 'allocate', 'rest'],
+        // Read from the environment rather than restated here: a scenario can
+        // revoke an action, and the agent must be told what it may actually do
+        // instead of discovering it one rejection at a time.
+        availableActions: currentState.permissions,
         constraints: currentState.constraints,
         stepsRemaining: Math.max(0, currentState.maxSteps - currentState.step),
         actionsRemaining: remainingActions(),

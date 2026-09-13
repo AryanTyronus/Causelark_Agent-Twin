@@ -28,6 +28,9 @@ export function evaluateRun(input: EvaluationInput): EvaluationResult {
   return EvaluationResult.parse({
     runId: input.runId,
     status: input.status,
+    // Echoed for attribution only — no scorer reads it, so a scenario run and an
+    // unscenarioed run with the same evidence score identically.
+    scenario: input.scenario ?? null,
     terminationReason: input.terminationReason,
     categories,
     overallScore: scoreOverall(categories),

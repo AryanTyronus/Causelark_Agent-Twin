@@ -2,13 +2,19 @@
 
 Causelark treats the environment as a deterministic, inspectable boundary. A
 run starts with a validated configuration and seed, persists its observable
-initial state, and advances through a request-driven `agent-step` endpoint.
+initial state, and advances through a request-driven `agent-step` endpoint. It
+can instead start inside a **scenario** — a declarative, deterministic
+perturbation of that baseline, applied before the run exists (see Scenarios).
 
 ## Boundaries
 
 - The pure resource environment in `src/lib/business/simulation.ts` owns state,
   permissions, budget, task requirements, validation, rejection reasons, and
   terminal status. It has no database or provider imports.
+- `src/lib/scenarios/` owns the environmental conditions a run can be started
+  under. It is data plus pure functions — no database, provider, clock,
+  randomness or filesystem access — and it modifies a world only by returning a
+  new one, through the environment's own contracts and constants.
 - `src/lib/agent/provider.ts` is the replaceable provider boundary. The runtime
   uses the official Strands Agents TypeScript SDK with one of two selectable
   model clients, both from that SDK: `BedrockModel`
@@ -149,22 +155,131 @@ evidence already stored, so a stored copy could only drift from the data it came
 from. `GET /api/simulations/runs/[runId]/evaluation` returns the verdict together
 with the raw metric set behind it, authenticated and scoped to the run's owner.
 
+## Scenarios
+
+A scenario is a deterministic environmental condition: the same agent, in the
+same environment, evaluated under a controlled perturbation of it. The pipeline
+is baseline environment → scenario definition → deterministic modification →
+agent run → persisted evidence → the existing evaluation engine, and the question
+it answers is *"how does this agent behave when the environment changes?"*.
+
+`src/lib/scenarios/` holds the whole layer, and it is isomorphic — Zod and the
+domain contracts, plus the environment's own published constants. Like the
+evaluation engine, it has no database, provider, clock, `server-only` or
+filesystem access, so it runs identically in a route handler and in a unit test:
+
+| File | Holds |
+| --- | --- |
+| `types.ts` | The scenario, modifier, change-record and result contracts |
+| `modifiers.ts` | One pure applier per modifier kind, in an exhaustive table |
+| `definitions.ts` | The seven shipped scenarios and the constants they derive from |
+| `catalog.ts` | The frozen catalogue and typed lookup by id and version |
+| `apply.ts` | `applyScenario`: validate, copy, apply in order, validate, report |
+| `scenario.ts` | The seam run creation uses: `initializeScenarioRun` |
+
+**A scenario is data, never code.** It is an id, a name, a description, an
+integer version and an ordered list of modifiers, each a tagged record of
+parameters drawn from a closed vocabulary of six kinds: `resource-reduction`,
+`resource-outage`, `budget-reduction`, `risk-increase`, `max-steps-reduction`
+and `permission-revocation`. Application is a pure function per kind; a
+definition can carry no other kind and no expression, so an id supplied through
+the API can only ever resolve to a definition that shipped with the code. The
+catalogue is a typed registry, not filesystem discovery, and an unknown id — or a
+recorded version the catalogue no longer ships — fails with
+`UNKNOWN_SCENARIO` rather than falling back to something close.
+
+**Determinism is structural.** The module reads no clock, no randomness and no
+environment variable, and a boundary test asserts it by reading the module's own
+source. Versions are small integers rather than timestamps, and they identify a
+definition, so a run recorded as `resource-scarcity@1` still resolves to exactly
+the world that produced it. The seed is preserved: `applyScenario` re-reads it
+after applying every modifier and refuses a result that changed it, because the
+seed belongs to the run, not to the condition. Definitions are frozen, and
+`applyScenario` never mutates its input — it re-parses the baseline and each
+modified world through the contracts and builds new objects.
+
+**Every change is explicit and attributable.** `applyScenario` returns the
+modified state and configuration alongside a change record per field it touched:
+`{ field, before, after, modifier }`, with the scenario id and version carried
+alongside. That is what answers what the original value was, what it became,
+which modifier moved it, and which scenario version is responsible — for example
+`{"field":"budgetRemaining","before":24,"after":14,"modifier":"budget-reduction"}`.
+A modifier that does not actually move a value emits no record. Reductions
+saturate at named floors (`MIN_SCENARIO_RESOURCE`, `MIN_SCENARIO_BUDGET`,
+`MIN_SCENARIO_MAX_STEPS`, `SCARCITY_RESOURCE_FLOOR`) rather than failing, and the
+saturated record shows the real numbers; risk elevation is the deliberate
+exception — it does not saturate, so an elevation that would reach the failure
+threshold is refused instead of being silently trimmed.
+
+The shipped scenarios are versioned definitions over the environment's own
+constants rather than invented numbers: scarcity halves each resource's published
+`startingRange` minimum, budget pressure removes a declared share of
+`DEFAULT_CONFIGURATION.budget`, and the tight step limit halves
+`DEFAULT_CONFIGURATION.maxSteps`.
+
+| Scenario | What it changes |
+| --- | --- |
+| `baseline` | Nothing — the control condition, recorded explicitly |
+| `resource-scarcity` | Reduces energy, materials and water at their starting stock |
+| `budget-pressure` | Reduces the run's budget, in both state and configuration |
+| `elevated-risk` | Raises starting risk, never past the environment's maximum |
+| `resource-outage` | Puts one resource at zero and publishes the outage as a constraint |
+| `tight-step-limit` | Halves the step limit, in both state and configuration |
+| `action-rejection` | Revokes one action type, in the environment's own permission list |
+
+**Safety, not special-casing.** Application happens before the run exists, at
+initialisation, so the agent starts inside the condition and cannot act before it
+is in force. Nothing bypasses validation: the action-rejection scenario removes an
+entry from the environment's permission list, and the refusal the agent sees is
+the environment's ordinary `PERMISSION_DENIED`, produced by
+`evaluateSimulationAction`. The scenario layer holds no rejection vocabulary of
+its own, and a boundary test asserts that. The outage likewise publishes a
+constraint instead of teaching the environment about outages.
+
+**Persistence records the condition, not the perturbation.** A run stores
+`scenarioId` and `scenarioVersion` — two additive nullable columns — and its
+`state` already holds the world the run started in, so the perturbed world is not
+duplicated and no derived value is stored twice. The pre-scenario numbers survive
+in the `scenario.applied` event payload, which is where an auditor wants them. A
+rerun pins the version the original recorded rather than re-resolving the id
+against the current catalogue, so a later change to a definition cannot silently
+change what reproducing a run means.
+
+**Evidence.** Applying a scenario is an environment event, not an agent action:
+it is written as a `scenario.applied` event with `source: 'system'`, sequenced
+between `simulation.started` and the first `observation.created`, and no
+simulation action is recorded for it. An unscenarioed run writes exactly the
+events it wrote before this layer existed.
+
+`GET /api/scenarios` serves the catalogue as summaries — id, name, description,
+version — with no modifier internals. Run creation accepts an optional
+`scenarioId`, resolved through the catalogue, and `POST
+/api/simulations/runs/<runId>/rerun` replays the recorded condition.
+
+Evaluation carries the scenario as **context, not input**: the verdict for the
+same evidence is identical whether or not a scenario is attached, and the
+metadata exists so a score can be labelled with the condition it was measured
+under. Phase 2 adds no scenario-specific scoring and no robustness score.
+
 ## Persistence
 
-Simulation tables are app-owned. They are created by a forward-only, purely
-additive user-owned migration
-(`prisma/migrations/20260912000000_add_simulation_tables`); the framework-owned
-better-auth migrations and `migration_lock.toml` are untouched.
+Simulation tables are app-owned. They are created by forward-only, purely
+additive user-owned migrations
+(`prisma/migrations/20260912000000_add_simulation_tables`, then
+`prisma/migrations/20260913000000_add_scenario_identity`, which adds the two
+nullable scenario columns to `SimulationRun`); the framework-owned better-auth
+migrations and `migration_lock.toml` are untouched.
 
 ## Extension points
 
-The contracts leave room for adversarial scenarios, counterfactual transitions,
-multi-agent environments, and benchmark suites. New tools must remain
-allow-listed and observable; new model providers should implement the adapter
-boundary without changing environment or persistence semantics. The evaluation
-engine scores whatever the environment persists, so a new environment is scorable
-once its evidence is recorded — but a dimension that cannot be derived from
-persisted data must be omitted rather than guessed at.
+New tools must remain allow-listed and observable; new model providers should
+implement the adapter boundary without changing environment or persistence
+semantics. The evaluation engine scores whatever the environment persists, so a
+new environment is scorable once its evidence is recorded — but a dimension that
+cannot be derived from persisted data must be omitted rather than guessed at.
+New environmental conditions belong in the scenario catalogue as declarative
+modifiers over the environment's published constants, not as special cases inside
+the environment or the agent runtime.
 
 ## Legacy surface
 

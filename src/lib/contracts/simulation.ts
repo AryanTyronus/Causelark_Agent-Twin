@@ -30,6 +30,7 @@ export const SimulationAgentStatus = z.enum([
 ]);
 export const SimulationEventKind = z.enum([
   'simulation.started',
+  'scenario.applied',
   'observation.created',
   'agent.turn.started',
   'agent.turn.completed',
@@ -94,11 +95,23 @@ export const SimulationOptions = z.object({
   constraints: z.array(z.string().min(1)).min(1),
   tools: z.array(SimulationToolDefinition).min(1),
 });
+/**
+ * Identity of the scenario a run was created under, or `null` for a run created
+ * without one. The version is recorded rather than resolved, so a run stays
+ * attributable to the exact scenario definition that shaped it even after the
+ * catalogue moves on.
+ */
+export const SimulationScenarioIdentity = z.object({
+  id: z.string().min(1).max(64),
+  version: z.number().int().positive(),
+});
 export const SimulationStartInput = z.object({
   environmentKey: SimulationEnvironmentKey,
   objectiveKey: SimulationObjectiveKey,
   seed: z.number().int().min(0).max(999999),
   configuration: SimulationConfiguration.partial().optional(),
+  /** Scenario id resolved server-side against the scenario catalogue. */
+  scenarioId: z.string().min(1).max(64).optional(),
 });
 
 export const SimulationResources = z.object({
@@ -146,6 +159,7 @@ export const SimulationRunSummary = z.object({
   step: z.number().int().min(0),
   maxSteps: z.number().int().positive(),
   budgetRemaining: z.number().int().min(0),
+  scenario: SimulationScenarioIdentity.nullable().default(null),
   terminationReason: z.string().nullable(),
   failureDetails: z.string().nullable(),
   createdAt: z.string().datetime(),
@@ -266,6 +280,7 @@ export type SimulationResource = z.infer<typeof SimulationResource>;
 export type SimulationOptions = z.infer<typeof SimulationOptions>;
 export type SimulationConfiguration = z.infer<typeof SimulationConfiguration>;
 export type SimulationStartInput = z.infer<typeof SimulationStartInput>;
+export type SimulationScenarioIdentity = z.infer<typeof SimulationScenarioIdentity>;
 export type SimulationResources = z.infer<typeof SimulationResources>;
 export type SimulationTaskProgress = z.infer<typeof SimulationTaskProgress>;
 export type SimulationState = z.infer<typeof SimulationState>;

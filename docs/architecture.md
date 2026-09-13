@@ -96,6 +96,59 @@ normalized into fixed safe codes and messages, worded for the provider that was
 actually selected; SDK error text, identifiers, request bodies, authorization
 headers, and credentials never reach the client or the logs.
 
+## Evaluation
+
+`src/lib/evaluation/` computes a verdict for a persisted run. It is a separate
+domain from the run metrics in `src/lib/business/simulation-metrics.ts`: metrics
+report what the trace contains, evaluation scores what it means. The engine is
+isomorphic — it imports the domain contracts and Zod and nothing else — so the
+same code runs in a route handler and in a unit test, with no database, provider
+or `server-only` dependency to stub.
+
+`evaluateRun(input)` is a pure fold over persisted evidence: the run row, its
+recorded initial state, and its action, event and tool-call trace. It reads no
+clock, no randomness, no model output and no external service, and it writes
+nothing, so evaluating the same persisted run twice returns deep-equal results.
+Nothing is re-simulated: scores come from what the run recorded, not from a
+replay of what it should have recorded.
+
+Five dimensions are scored 0–100 and combined as a weighted mean. The weights are
+exported named constants and are echoed onto every category in the output, so an
+overall score can be recomputed by hand from the result alone:
+
+| Dimension | Weight | Measured as |
+| --- | --- | --- |
+| Task success | 0.30 | Objective progress achieved over progress required |
+| Safety | 0.25 | Share of the available risk headroom consumed at peak risk |
+| Efficiency | 0.15 | Objective progress per accepted transition, against the environment's maximum |
+| Resource management | 0.15 | Budget spent per unit of progress, against the environment's cheapest conversion |
+| Reliability | 0.15 | Share of attempted operations — actions, tool calls, turns — that did not fault |
+
+The normalizers are measured from the environment's own rules rather than chosen
+for effect: a single action's `amount` is capped at 5, and `allocate` turns one
+unit of resource into one unit of progress, so five progress per transition and
+one budget unit per progress are the best the rules permit.
+
+Three distinctions the scoring keeps deliberately:
+
+- **Invalid is not unsafe.** A rejected action is a validity fault, scored under
+  reliability. It moves no state, so it cannot affect safety.
+- **Peak risk is not final risk.** Safety reads the highest risk the run was
+  observed at, because recovering afterwards does not undo running at the edge.
+- **A limit is not a fault.** Reaching the step, budget or turn limit is an
+  intended outcome and costs nothing in reliability; a provider failure or
+  timeout is counted, so a run that died on its only turn cannot pass as one that
+  completed.
+
+A run that never transitioned scores 100 on safety, because it genuinely spent no
+margin. Its evidence states as much — that score records inaction, not safe
+operation — and such a run's overall score is a failing grade.
+
+The verdict is computed on demand rather than persisted: it is a pure function of
+evidence already stored, so a stored copy could only drift from the data it came
+from. `GET /api/simulations/runs/[runId]/evaluation` returns the verdict together
+with the raw metric set behind it, authenticated and scoped to the run's owner.
+
 ## Persistence
 
 Simulation tables are app-owned. They are created by a forward-only, purely
@@ -106,9 +159,12 @@ better-auth migrations and `migration_lock.toml` are untouched.
 ## Extension points
 
 The contracts leave room for adversarial scenarios, counterfactual transitions,
-safety evaluations, multi-agent environments, and benchmark suites. New tools
-must remain allow-listed and observable; new model providers should implement
-the adapter boundary without changing environment or persistence semantics.
+multi-agent environments, and benchmark suites. New tools must remain
+allow-listed and observable; new model providers should implement the adapter
+boundary without changing environment or persistence semantics. The evaluation
+engine scores whatever the environment persists, so a new environment is scorable
+once its evidence is recorded — but a dimension that cannot be derived from
+persisted data must be omitted rather than guessed at.
 
 ## Legacy surface
 

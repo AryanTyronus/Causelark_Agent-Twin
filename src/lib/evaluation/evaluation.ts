@@ -11,7 +11,7 @@
 // constants and repeated in the output.
 
 import { collectEvaluationMetrics } from './metrics';
-import { scoreEvaluation, scoreOverall } from './scoring';
+import { DEFAULT_SCORING_PROFILE, scoreEvaluation, scoreOverall } from './scoring';
 import { type EvaluationInput, EvaluationResult } from './types';
 
 /**
@@ -23,7 +23,11 @@ import { type EvaluationInput, EvaluationResult } from './types';
  */
 export function evaluateRun(input: EvaluationInput): EvaluationResult {
   const metrics = collectEvaluationMetrics(input);
-  const categories = scoreEvaluation(metrics);
+  // The world's own constants, or the resource-routing ones this engine has
+  // always used. Never a lookup behind the evidence: two runs scored from the
+  // same input must produce the same verdict, and a profile read from ambient
+  // state could change between them.
+  const categories = scoreEvaluation(metrics, input.scoringProfile ?? DEFAULT_SCORING_PROFILE);
   return EvaluationResult.parse({
     runId: input.runId,
     status: input.status,
@@ -39,6 +43,7 @@ export function evaluateRun(input: EvaluationInput): EvaluationResult {
 
 export { collectEvaluationMetrics } from './metrics';
 export {
+  DEFAULT_SCORING_PROFILE,
   EFFICIENCY_WEIGHT,
   MAX_CATEGORY_SCORE,
   MAX_PROGRESS_PER_TRANSITION,

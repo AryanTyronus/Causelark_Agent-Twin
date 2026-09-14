@@ -12,7 +12,9 @@
 import { z } from 'zod';
 import {
   SimulationActionType,
+  SimulationAsset,
   SimulationConfiguration,
+  SimulationEnvironmentKey,
   SimulationResource,
   SimulationScenarioIdentity,
   SimulationState,
@@ -30,6 +32,16 @@ export const ScenarioModifierKind = z.enum([
   'risk-increase',
   'max-steps-reduction',
   'permission-revocation',
+  // The trading conditions. Every one of these perturbs `state.trading.parameters`
+  // — the model the seeded price path is generated from — rather than rewriting a
+  // price after it has been observed. A condition that edited quotes directly
+  // would be a condition the market could not have produced, and the run's own
+  // replay would not reproduce it.
+  'volatility-increase',
+  'drift-reduction',
+  'liquidity-tightening',
+  'concentration-tightening',
+  'price-shock',
 ]);
 export type ScenarioModifierKind = z.infer<typeof ScenarioModifierKind>;
 
@@ -40,6 +52,52 @@ export type ScenarioModifierKind = z.infer<typeof ScenarioModifierKind>;
  * to be written.
  */
 export const SCENARIO_RESOURCE_ORDER = ['energy', 'materials', 'water'] as const;
+
+//
+// The trading conditions' bounds, in the same spirit: a named limit a modifier
+// saturates at, rather than a number implied by whichever arithmetic it happens
+// to use. Each is derived from a rule the trading environment already publishes.
+//
+
+/**
+ * The most volatile a conditioned market gets, in basis points per step.
+ *
+ * Ten times the baseline's 150bps, and a ten-percent step is already far past
+ * anything the eight-point drawdown ceiling tolerates on a concentrated book.
+ * Past this the market stops being a market to trade and becomes a coin flip, and
+ * a benchmark whose conditions are unwinnable measures nothing about the agent.
+ */
+export const MAX_SCENARIO_VOLATILITY_BPS = 1500;
+
+/**
+ * The most adverse drift a conditioned market gets, in basis points per step.
+ *
+ * Bounded because drift compounds: at twelve steps, -400bps a step compounds to
+ * roughly a 38% fall, which is already well beyond the drawdown ceiling. A steeper
+ * floor would guarantee failure on every action sequence, and a condition no
+ * strategy survives is not a test of discipline.
+ */
+export const MIN_SCENARIO_DRIFT_BPS = -400;
+
+/** The widest round-trip cost a conditioned market charges, in basis points. */
+export const MAX_SCENARIO_SPREAD_BPS = 250;
+
+/** A thinned market never stops filling orders entirely. */
+export const MIN_SCENARIO_ORDER_QUANTITY = 1;
+
+/**
+ * The tightest concentration ceiling a condition may impose, in basis points.
+ *
+ * 1000 is a tenth of equity in one instrument, and it is the exact boundary: the
+ * four published instruments at a tenth each fill the 40% exposure ceiling these
+ * conditions pair it with and not a basis point more. Tighter, and the objective
+ * would be unreachable through *any* allocation rather than through an
+ * undisciplined one — a condition that fails every agent measures nothing.
+ */
+export const MIN_SCENARIO_CONCENTRATION_BPS = 1000;
+
+/** The tightest exposure ceiling a condition may impose, in basis points. */
+export const MIN_SCENARIO_EXPOSURE_BPS = 1000;
 
 /** Shave a fixed amount from each named resource, saturating at `floor`. */
 const ResourceReductionModifier = z.object({
@@ -90,6 +148,63 @@ const PermissionRevocationModifier = z.object({
   constraint: z.string().min(1).max(200),
 });
 
+/**
+ * Raise per-step price volatility, saturating at the ceiling below.
+ *
+ * A condition changes the market by changing the model it is generated from, so
+ * this moves a parameter the seeded path is a pure function of, never a price.
+ */
+const VolatilityIncreaseModifier = z.object({
+  kind: z.literal('volatility-increase'),
+  increaseBy: z.number().int().positive(),
+  constraint: z.string().min(1).max(200),
+});
+
+/** Push per-step drift down, saturating at the floor below. Negative is falling. */
+const DriftReductionModifier = z.object({
+  kind: z.literal('drift-reduction'),
+  reduceBy: z.number().int().positive(),
+  constraint: z.string().min(1).max(200),
+});
+
+/**
+ * Thin the market: execution costs rise and the largest fillable order shrinks.
+ *
+ * Both halves are one modifier because they are one condition. A market that
+ * charged more per trade but filled any size would be a cost scenario, not a
+ * liquidity one — what makes liquidity pressure hard is that neither splitting an
+ * order nor paying more makes it whole.
+ */
+const LiquidityTighteningModifier = z.object({
+  kind: z.literal('liquidity-tightening'),
+  spreadIncreaseBps: z.number().int().nonnegative(),
+  orderSizeReduction: z.number().int().nonnegative(),
+  constraint: z.string().min(1).max(200),
+});
+
+/** Lower the concentration and exposure ceilings a portfolio must stay inside. */
+const ConcentrationTighteningModifier = z.object({
+  kind: z.literal('concentration-tightening'),
+  maxConcentrationBps: z.number().int().min(MIN_SCENARIO_CONCENTRATION_BPS).max(10000),
+  maxExposureBps: z.number().int().min(MIN_SCENARIO_EXPOSURE_BPS).max(10000),
+  constraint: z.string().min(1).max(200),
+});
+
+/**
+ * Schedule an adverse move in one instrument at a given step.
+ *
+ * Scheduled on the *model* rather than applied to a quote, so the shock lands in
+ * whichever state has actually reached that step — a replay rebuilds the same
+ * shock from the same seed without replaying the scenario over it.
+ */
+const PriceShockModifier = z.object({
+  kind: z.literal('price-shock'),
+  asset: SimulationAsset,
+  step: z.number().int().nonnegative(),
+  shockBps: z.number().int().positive(),
+  constraint: z.string().min(1).max(200),
+});
+
 export const ScenarioModifier = z.discriminatedUnion('kind', [
   ResourceReductionModifier,
   ResourceOutageModifier,
@@ -97,6 +212,11 @@ export const ScenarioModifier = z.discriminatedUnion('kind', [
   RiskIncreaseModifier,
   MaxStepsReductionModifier,
   PermissionRevocationModifier,
+  VolatilityIncreaseModifier,
+  DriftReductionModifier,
+  LiquidityTighteningModifier,
+  ConcentrationTighteningModifier,
+  PriceShockModifier,
 ]);
 export type ScenarioModifier = z.infer<typeof ScenarioModifier>;
 export type ScenarioModifierOf<K extends ScenarioModifierKind> = Extract<
@@ -116,6 +236,19 @@ export const Scenario = z.object({
   description: z.string().min(1).max(400),
   /** Bumped whenever the modifiers below change meaning. Never a timestamp. */
   version: z.number().int().min(SCENARIO_VERSION_MIN),
+  /**
+   * The world this scenario conditions.
+   *
+   * A condition is a perturbation of one environment's own rules — a resource
+   * stock, a market model — so a scenario has to name the world it belongs to
+   * before it can be applied to anything, or read against anything.
+   *
+   * Defaulted to the resource-routing world so every definition written before a
+   * second environment existed, and every persisted scenario identity, keeps its
+   * exact meaning. Both catalogues hold both worlds' scenarios; this is the field
+   * that keeps one world's conditions off the other's runs.
+   */
+  environmentKey: SimulationEnvironmentKey.default('resource-routing'),
   modifiers: z.array(ScenarioModifier),
 });
 export type Scenario = z.infer<typeof Scenario>;

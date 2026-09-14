@@ -29,6 +29,28 @@ export const EvaluationCategory = z.enum(EVALUATION_CATEGORIES);
 export type EvaluationCategory = z.infer<typeof EvaluationCategory>;
 
 /**
+ * The environment-measured constants a score is normalised against.
+ *
+ * Structural, and deliberately not imported from an environment: the evaluation
+ * module may not reach a world's implementation, and the direction is right
+ * anyway. These numbers are *inputs to* a score, so they travel with the
+ * evidence rather than being looked up behind it — a verdict stays a function of
+ * what it was given.
+ *
+ * Each environment publishes its own values in the same shape, so a world
+ * declares what it costs to score it without the evaluator knowing which world
+ * it is scoring. The two are structurally identical on purpose: neither module
+ * owns the other's vocabulary, and TypeScript's structural typing makes them
+ * interchangeable without either importing the other.
+ */
+export interface ScoringProfile {
+  /** Greatest objective progress a single accepted transition can produce. */
+  maxProgressPerTransition: number;
+  /** Best achievable budget units per unit of objective progress. */
+  optimalBudgetPerProgressUnit: number;
+}
+
+/**
  * The evidence the engine is allowed to read. Every field is persisted
  * simulation data — the run row, its recorded initial state, and its action,
  * event and tool-call trace. Nothing here is computed from wall-clock time,
@@ -61,6 +83,19 @@ export interface EvaluationInput {
    * whether a run was scenarioed or not.
    */
   scenario?: SimulationScenarioIdentity | null;
+  /**
+   * The constants of the world that produced this evidence, or absent for the
+   * resource-routing constants every run was scored under before a second world
+   * existed.
+   *
+   * Read by two categories — efficiency normalises against the progress ceiling,
+   * resource management against the optimal budget ratio — so a trading run
+   * scored under the resource world's numbers would report a plausible figure
+   * that measures nothing. Absent is therefore not "unscored": it is the
+   * resource-routing profile, which is what makes every persisted run and every
+   * hand-built test input keep its exact verdict.
+   */
+  scoringProfile?: ScoringProfile;
 }
 
 /**

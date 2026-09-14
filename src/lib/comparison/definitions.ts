@@ -22,4 +22,13 @@ export const EXPERIMENT_TEMPLATES: readonly ExperimentTemplate[] = [
     benchmarkId: 'resource-routing-robustness',
     benchmarkVersion: 1,
   },
+  {
+    id: 'trading-10k-agent-comparison',
+    version: 1,
+    name: '$10K Trading Challenge',
+    description:
+      'Runs the $10K Trading Challenge — the same seven simulated market conditions at their pinned versions, the same seed, the same objective and the same evaluation — once per agent, then compares the agents on what the evidence recorded. Each agent meets an identical market and a fresh one per case. Simulated portfolio only: no brokerage, no orders, no money.',
+    benchmarkId: 'trading-10k',
+    benchmarkVersion: 1,
+  },
 ];

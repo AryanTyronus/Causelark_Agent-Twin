@@ -23,8 +23,8 @@ import { EvaluationResult } from '@/lib/evaluation/types';
 export const BENCHMARK_VERSION_MIN = 1;
 
 /**
- * The largest matrix one execution may build: the seven shipped scenarios
- * against the four seeds the environment publishes. Bounded deliberately — a
+ * The largest matrix one execution may build: one world's seven conditions
+ * against the four seeds the environments publish. Bounded deliberately — a
  * benchmark case drives a real agent turn loop, and this phase favours
  * reproducibility over throughput.
  */
@@ -37,9 +37,14 @@ export const MAX_BENCHMARK_SEEDS = 4;
 export const BENCHMARK_METRIC_PRECISION = 2;
 
 /**
- * The scenario every benchmark measures degradation against. Robustness is a
- * statement about a change, so a definition must name the condition it is a
- * change *from*.
+ * The scenario a benchmark measures degradation against when it names none of
+ * its own. Robustness is a statement about a change, so a definition must name
+ * the condition it is a change *from* — and a condition is a scenario identity
+ * inside one world, so the reference has to be the definition's to make.
+ *
+ * This is the resource-routing world's baseline, and it stays the default so
+ * every definition written before a second world existed keeps its exact
+ * meaning.
  */
 export const BENCHMARK_BASELINE_SCENARIO_ID = 'baseline';
 
@@ -94,6 +99,16 @@ export const BenchmarkDefinition = z.object({
   description: z.string().min(1).max(400),
   environmentKey: SimulationEnvironmentKey,
   objectiveKey: SimulationObjectiveKey,
+  /**
+   * The condition robustness is measured as a change *from*.
+   *
+   * Defaulted rather than required, and defaulted to the resource-routing
+   * baseline in particular: every benchmark that shipped before a second
+   * environment existed named that condition implicitly, and a benchmark that
+   * still does is not ambiguous — it is one whose world has exactly one
+   * baseline. A world with its own baseline names it.
+   */
+  baselineScenarioId: z.string().min(1).max(64).default(BENCHMARK_BASELINE_SCENARIO_ID),
   /** Ordered: the matrix follows this order, then the seed order. */
   scenarios: z.array(BenchmarkScenario).min(1),
   /** Ordered: the matrix follows the scenario order, then this order. */
@@ -303,8 +318,8 @@ export const BenchmarkDetail = z.object({
   seeds: z.array(z.number().int().min(0)),
   /** Matrix cells: scenarios × seeds. */
   caseCount: z.number().int().positive(),
-  /** The scenario robustness is measured as a change from. */
-  baselineScenarioId: z.literal(BENCHMARK_BASELINE_SCENARIO_ID),
+  /** The scenario robustness is measured as a change from, for this benchmark. */
+  baselineScenarioId: z.string().min(1),
   /** The formula the benchmark engine computes robustness with. */
   robustnessFormula: z.literal(BENCHMARK_ROBUSTNESS_FORMULA),
   /** Configuration this benchmark declares over the environment's defaults. */

@@ -229,9 +229,24 @@ describe('the Run a Test flow', () => {
     expect(view.has('2. Select benchmark')).toBe(true);
     expect(view.has('3. Review conditions')).toBe(true);
 
-    // The benchmark card is the catalogued benchmark, at its pinned version.
-    for (const benchmark of BENCHMARKS) expect(view.has(benchmark.name)).toBe(true);
+    // The card shows the benchmark the default experiment pins, resolved from the
+    // benchmark catalogue rather than restated — so the name a reader sees is the
+    // name the engine will run.
+    expect(view.has(EXPERIMENT.benchmarkName)).toBe(true);
     expect(view.has(`${EXPERIMENT.benchmarkId}@${EXPERIMENT.benchmarkVersion}`)).toBe(true);
+
+    // And every catalogue benchmark is one the picker can resolve to an
+    // experiment. Selecting a benchmark no experiment runs would leave the flow
+    // with no plan and no explanation, so this is the invariant that makes
+    // offering them all honest.
+    for (const benchmark of BENCHMARKS)
+      expect(
+        EXPERIMENTS.some(
+          (entry) =>
+            entry.benchmarkId === benchmark.id && entry.benchmarkVersion === benchmark.version,
+        ),
+        `no experiment runs ${benchmark.id}@${benchmark.version}`,
+      ).toBe(true);
 
     // And the plan states the matrix the engine will drive, from the engine's
     // own builder rather than from a second count written in the interface.

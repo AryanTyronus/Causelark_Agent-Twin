@@ -100,7 +100,16 @@ describe('GET /api/agent-comparisons', () => {
     const body = await bodyOf(response);
     expect(() => ExperimentCatalog.parse(body)).not.toThrow();
     const experiments = body.experiments as Array<Record<string, unknown>>;
-    expect(experiments.map((entry) => entry.id)).toEqual([EXPERIMENT_ID]);
+    // One experiment per shipped benchmark, so the operator's picker can offer
+    // both and resolve either to something runnable.
+    expect(experiments.map((entry) => entry.id)).toEqual([
+      EXPERIMENT_ID,
+      'trading-10k-agent-comparison',
+    ]);
+    expect(experiments.map((entry) => entry.benchmarkId)).toEqual([
+      'resource-routing-robustness',
+      'trading-10k',
+    ]);
   });
 
   it('states the methodology and the bounds without naming an agent', async () => {

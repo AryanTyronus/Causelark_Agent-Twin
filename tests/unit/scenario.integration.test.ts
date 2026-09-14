@@ -366,6 +366,8 @@ describe('scenario catalogue endpoint', () => {
     );
     expect(response.status).toBe(200);
     const body = (await response.json()) as { scenarios: Array<Record<string, unknown>> };
+    // Both worlds' conditions are served from the one catalogue, so a run created
+    // against either environment can resolve the scenario it recorded.
     expect(body.scenarios.map((entry) => entry.id)).toEqual([
       'baseline',
       'resource-scarcity',
@@ -374,6 +376,13 @@ describe('scenario catalogue endpoint', () => {
       'resource-outage',
       'tight-step-limit',
       'action-rejection',
+      'trading-baseline',
+      'high-volatility',
+      'market-drawdown',
+      'liquidity-pressure',
+      'concentration-pressure',
+      'adverse-price-shock',
+      'tight-decision-limit',
     ]);
     for (const entry of body.scenarios)
       expect(Object.keys(entry).sort()).toEqual(['description', 'id', 'name', 'version']);

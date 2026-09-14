@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { NextResponse } from 'next/server';
-import { DEFAULT_CONFIGURATION, isSupportedSeed } from '@/lib/business/simulation';
+import { isSupportedSeed } from '@/lib/business/simulation';
 import { jsonValue, toDetail, toSummary } from '@/lib/business/simulation-persistence';
 import {
   SimulationRunDetail,
@@ -9,6 +9,7 @@ import {
   SimulationStartInput,
 } from '@/lib/contracts/simulation';
 import { prisma } from '@/lib/db';
+import { defaultConfigurationFor } from '@/lib/environments/registry';
 import { requireAuth, type SessionUser } from '@/lib/require-auth';
 import {
   describeScenarioApplication,
@@ -73,7 +74,14 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   try {
-    const configuration = { ...DEFAULT_CONFIGURATION, ...parsed.data.configuration };
+    // The request's overrides are merged over the configuration the *named
+    // world* publishes, not over one deployment-wide default: the two worlds
+    // fund different objectives and a shared fallback would run whichever world
+    // was added second at the other one's numbers.
+    const configuration = {
+      ...defaultConfigurationFor(parsed.data.environmentKey),
+      ...parsed.data.configuration,
+    };
     // The scenario is resolved from the server-side catalogue and applied here,
     // before the run row exists: an unknown id is a bad request, not a run that
     // silently starts unperturbed.

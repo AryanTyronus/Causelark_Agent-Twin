@@ -7,7 +7,6 @@
 // element, including the index and the key of every cell.
 
 import {
-  BENCHMARK_BASELINE_SCENARIO_ID,
   type BenchmarkCase,
   type BenchmarkDefinition,
   BenchmarkError,
@@ -59,7 +58,7 @@ export function buildRunMatrix(definition: BenchmarkDefinition): BenchmarkCase[]
         scenarioId: scenario.id,
         scenarioVersion: scenario.version,
         seed,
-        isBaseline: scenario.id === BENCHMARK_BASELINE_SCENARIO_ID,
+        isBaseline: scenario.id === definition.baselineScenarioId,
       });
     }
   }

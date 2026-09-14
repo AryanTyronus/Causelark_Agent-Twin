@@ -10,8 +10,8 @@
 // touches a database or a provider, so applying `seed = 1042` under
 // `resource-scarcity@1` twice produces the same state both times.
 
-import { getSimulationStatus } from '@/lib/business/simulation';
 import { SimulationConfiguration, SimulationState } from '@/lib/contracts/simulation';
+import { getSimulationStatus } from '@/lib/environments/registry';
 import { applyModifier } from './modifiers';
 import {
   MIN_SCENARIO_RISK_HEADROOM,
@@ -91,6 +91,19 @@ export function applyScenario(
     throw new ScenarioError('INVALID_SCENARIO', 'The scenario definition is not valid.');
 
   let current = frozenBaseline(baseline);
+
+  // A condition perturbs one world's own rules, so applying it to the other world
+  // is an authoring mistake rather than a no-op: the resource conditions would
+  // shave stocks the trading world never reads, and the trading conditions would
+  // rewrite a market the resource world does not have. Refused here, before any
+  // modifier runs, so the mistake cannot reach a run as a "conditioned" world
+  // that is in fact unperturbed.
+  if (parsed.data.environmentKey !== current.state.environmentKey)
+    throw new ScenarioError(
+      'INVALID_BASELINE',
+      `Scenario ${parsed.data.id} conditions the ${parsed.data.environmentKey} environment, but this baseline is a ${current.state.environmentKey} world.`,
+    );
+
   const seed = current.state.seed;
   const changes: ScenarioChange[] = [];
   for (const modifier of parsed.data.modifiers as ScenarioModifier[]) {

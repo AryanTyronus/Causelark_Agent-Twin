@@ -45,12 +45,12 @@
 // recorded value is mutated — every world this module produces is a new object
 // returned by the environment's own pure transition.
 
-import { evaluateSimulationAction, getSimulationStatus } from '@/lib/business/simulation';
 import type {
   SimulationActionRecord,
   SimulationRunStatus,
   SimulationState,
 } from '@/lib/contracts/simulation';
+import { evaluateSimulationAction, getSimulationStatus } from '@/lib/environments/registry';
 import type { EvaluationInput } from '@/lib/evaluation/types';
 import { type ActionCandidate, canonicalAction } from './actions';
 import type { CounterfactualContinuation, CounterfactualWorld } from './types';

@@ -87,12 +87,30 @@ const SCENARIO_FILES = [
  */
 const ALLOWED_IMPORTS: Record<(typeof SCENARIO_FILES)[number], string[]> = {
   'types.ts': ['@/lib/contracts/simulation', 'zod'],
-  'modifiers.ts': ['@/lib/contracts/simulation', './types'],
-  'definitions.ts': ['@/lib/business/simulation', '@/lib/contracts/simulation', './types'],
+  // `@/lib/trading/market` is the market model's own pure price function. A
+  // trading condition perturbs the parameters that function reads and then asks
+  // it for the quotes those parameters imply, so the state a condition produces
+  // is one the environment's own model agrees with.
+  'modifiers.ts': ['@/lib/contracts/simulation', '@/lib/trading/market', './types'],
+  'definitions.ts': [
+    '@/lib/business/simulation',
+    '@/lib/contracts/simulation',
+    '@/lib/trading/definitions',
+    './types',
+  ],
   'catalog.ts': ['./definitions', './types'],
-  'apply.ts': ['@/lib/business/simulation', '@/lib/contracts/simulation', './modifiers', './types'],
+  // The environment registry rather than the resource-routing module: applying a
+  // scenario must ask whichever world the state belongs to whether it is still
+  // valid, and the registry is the one place that knows which world that is.
+  'apply.ts': [
+    '@/lib/environments/registry',
+    '@/lib/contracts/simulation',
+    './modifiers',
+    './types',
+  ],
   'scenario.ts': [
     '@/lib/business/simulation',
+    '@/lib/environments/registry',
     '@/lib/contracts/simulation',
     './apply',
     './catalog',

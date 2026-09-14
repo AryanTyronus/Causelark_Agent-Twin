@@ -82,6 +82,12 @@ function importSpecifiers(text: string): string[] {
 const PERMITTED_SPECIFIERS = [
   'zod',
   '@/lib/contracts/simulation',
+  // The environment registry is the seam that decides which world a state
+  // belongs to; `business/simulation` remains permitted because the
+  // resource-routing adapter — the one module that owns that world's rules —
+  // reaches its validator through it.
+  '@/lib/environments/registry',
+  '@/lib/environments/types',
   '@/lib/business/simulation',
   '@/lib/evaluation/types',
   '@/lib/evaluation/evaluation',

@@ -1,12 +1,15 @@
 import { type Tool, tool } from '@strands-agents/sdk';
 import { z } from 'zod';
-import { evaluateSimulationAction, getSimulationStatus } from '@/lib/business/simulation';
-import {
-  SimulationActionInput,
-  type SimulationActionInput as SimulationActionInputType,
-  type SimulationState,
+import type {
+  SimulationActionInput as SimulationActionInputType,
+  SimulationState,
 } from '@/lib/contracts/simulation';
 import type { SimulationAgentToolOutcome } from '@/lib/contracts/simulation-agent';
+import {
+  evaluateSimulationAction,
+  getSimulationStatus,
+  simulationEnvironmentFor,
+} from '@/lib/environments/registry';
 
 /** Upper bound on `request_action` attempts inside one bounded agent turn. */
 export const DEFAULT_MAX_ACTIONS_PER_TURN = 3;
@@ -25,11 +28,20 @@ export interface ResourceToolboxOptions {
 /**
  * Builds the allow-listed tool set for one bounded turn.
  *
- * Both tools are pure with respect to the run: they only ever move a local state
- * copy forward through the same `evaluateSimulationAction` validator the manual
- * operator endpoint uses, so a rejected action can never mutate simulation state.
- * The action allowance is what keeps a single invocation from looping forever —
- * once it is spent, further requests are refused without touching state.
+ * The tools are the state's own environment's, not this module's: a world
+ * declares the read-only probes it offers and the one tool through which an
+ * action is requested, and the toolbox instantiates exactly those. That is what
+ * keeps one world's vocabulary out of another's prompt — a trading agent is
+ * never told to observe resources, and a resource agent is never told to inspect
+ * a portfolio — while both go through the identical validator, allowance and
+ * envelope below.
+ *
+ * Both kinds of tool are pure with respect to the run: they only ever move a
+ * local state copy forward through the same `evaluateSimulationAction` validator
+ * the manual operator endpoint uses, so a rejected action can never mutate
+ * simulation state. The action allowance is what keeps a single invocation from
+ * looping forever — once it is spent, further requests are refused without
+ * touching state.
  */
 export function createResourceTools(
   initialState: SimulationState,
@@ -42,43 +54,55 @@ export function createResourceTools(
   const maxActions = Math.max(1, Math.floor(options.maxActions ?? DEFAULT_MAX_ACTIONS_PER_TURN));
   const remainingActions = () => Math.max(0, maxActions - actionsRequested);
   const terminal = () => getSimulationStatus(currentState).status !== 'RUNNING';
-  const observeResources = tool({
-    name: 'observe_resources',
-    description:
-      'Read observable resources, budget, tasks, constraints, objective progress, and remaining action allowance.',
-    inputSchema: z.object({}),
-    callback: () => {
-      const startedAt = Date.now();
-      const output = {
-        objective,
-        state: currentState,
-        // Read from the environment rather than restated here: a scenario can
-        // revoke an action, and the agent must be told what it may actually do
-        // instead of discovering it one rejection at a time.
-        availableActions: currentState.permissions,
-        constraints: currentState.constraints,
-        stepsRemaining: Math.max(0, currentState.maxSteps - currentState.step),
-        actionsRemaining: remainingActions(),
-        terminal: terminal(),
-      };
-      outcomes.push({
-        toolName: 'observe_resources',
-        input: {},
-        output,
-        status: 'SUCCEEDED',
-        validationReason: null,
-        latencyMs: Date.now() - startedAt,
-        stateBefore: currentState,
-        stateAfter: currentState,
-      });
-      return output;
-    },
+  const environment = simulationEnvironmentFor(initialState);
+
+  /**
+   * What every probe returns: the whole observable state and the turn's bounds.
+   *
+   * One envelope for every read-only tool, because an agent that could not see
+   * its remaining allowance or its constraints from whichever probe it happened
+   * to call would have to discover its limits one refusal at a time.
+   */
+  const observe = () => ({
+    objective,
+    state: currentState,
+    // Read from the environment rather than restated here: a scenario can
+    // revoke an action, and the agent must be told what it may actually do
+    // instead of discovering it one rejection at a time.
+    availableActions: currentState.permissions,
+    constraints: currentState.constraints,
+    stepsRemaining: Math.max(0, currentState.maxSteps - currentState.step),
+    actionsRemaining: remainingActions(),
+    terminal: terminal(),
   });
+
+  const observations = environment.agentTools.observations.map((declaration) =>
+    tool({
+      name: declaration.name,
+      description: declaration.description,
+      inputSchema: z.object({}),
+      callback: () => {
+        const startedAt = Date.now();
+        const output = observe();
+        outcomes.push({
+          toolName: declaration.name,
+          input: {},
+          output,
+          status: 'SUCCEEDED',
+          validationReason: null,
+          latencyMs: Date.now() - startedAt,
+          stateBefore: currentState,
+          stateAfter: currentState,
+        });
+        return output;
+      },
+    }),
+  );
+
   const requestAction = tool({
-    name: 'request_action',
-    description:
-      'Request one action. The deterministic environment validates it before changing state. You may request a limited number of actions per turn.',
-    inputSchema: SimulationActionInput,
+    name: environment.agentTools.action.name,
+    description: environment.agentTools.action.description,
+    inputSchema: environment.actionInputSchema,
     callback: (input: SimulationActionInputType) => {
       const startedAt = Date.now();
       const stateBefore = currentState;
@@ -129,7 +153,7 @@ export function createResourceTools(
     },
   });
   return {
-    tools: [observeResources, requestAction],
+    tools: [...observations, requestAction],
     getState: () => currentState,
     getOutcomes: () => [...outcomes],
   };

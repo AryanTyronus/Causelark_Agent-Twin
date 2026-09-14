@@ -15,6 +15,7 @@ import {
   SimulationRunStatus,
   SimulationState,
 } from '@/lib/contracts/simulation';
+import { simulationEnvironment } from '@/lib/environments/registry';
 import { evaluateRun } from '@/lib/evaluation/evaluation';
 import type { EvaluationInput, EvaluationResult } from '@/lib/evaluation/types';
 import { DEFAULT_CONFIGURATION } from './simulation';
@@ -34,10 +35,18 @@ import {
  * created before it existed.
  */
 export function toEvaluationInput(run: PersistedRun): EvaluationInput {
+  const state = SimulationState.parse(run.state);
   return {
     runId: run.id,
     status: SimulationRunStatus.parse(run.status),
-    state: SimulationState.parse(run.state),
+    state,
+    // The world that produced the evidence declares the constants its own scores
+    // are normalised against, so a trading run is measured against the pace the
+    // trading objective demands rather than the resource world's per-action
+    // ceiling. Resolved from the state rather than a parameter: the state is the
+    // only trustworthy witness to which world a persisted run belongs to, and
+    // every caller of this mapping therefore gets it right without asking.
+    scoringProfile: simulationEnvironment(state.environmentKey).scoring,
     initialState: SimulationState.parse(run.initialState ?? run.state),
     actions: run.actions.map(toAction),
     events: run.events.map(toEvent),

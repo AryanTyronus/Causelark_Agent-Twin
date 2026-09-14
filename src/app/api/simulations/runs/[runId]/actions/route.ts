@@ -2,7 +2,6 @@ import 'server-only';
 
 import type { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
-import { evaluateSimulationAction, getSimulationStatus } from '@/lib/business/simulation';
 import { jsonValue, loadRun, toAction, toDetail } from '@/lib/business/simulation-persistence';
 import {
   SimulationActionInput,
@@ -10,6 +9,7 @@ import {
   SimulationState,
 } from '@/lib/contracts/simulation';
 import { prisma } from '@/lib/db';
+import { evaluateSimulationAction, getSimulationStatus } from '@/lib/environments/registry';
 import { requireAuth, type SessionUser } from '@/lib/require-auth';
 
 export const dynamic = 'force-dynamic';

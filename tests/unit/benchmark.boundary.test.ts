@@ -55,6 +55,14 @@ const PERMITTED_SPECIFIERS = [
   '@/lib/business/simulation',
   '@/lib/scenarios/catalog',
   '@/lib/scenarios/definitions',
+  // The environment registry, added when a second benchmark arrived: a pure
+  // benchmark module has to be able to resolve which world a definition names
+  // and what that world publishes, and the registry is a frozen in-process
+  // record with no clock, database, provider or network beneath it.
+  '@/lib/environments/registry',
+  // The trading world's published constants, cited by the definition that runs
+  // it rather than restated as literals there.
+  '@/lib/trading/definitions',
 ];
 
 describe('benchmark calculation modules', () => {

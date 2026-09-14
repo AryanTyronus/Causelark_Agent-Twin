@@ -361,8 +361,11 @@ describe('benchmark catalogue endpoint', () => {
     const response = await listBenchmarks(new Request(`${BASE}/benchmarks`, { method: 'GET' }));
     expect(response.status).toBe(200);
     const body = (await response.json()) as { benchmarks: Array<Record<string, unknown>> };
-    expect(body.benchmarks).toHaveLength(1);
-    const [summary] = body.benchmarks;
+    // Both shipped benchmarks are served from the one catalogue, so the picker
+    // lists the $10K Trading Challenge beside Resource Routing Robustness without
+    // knowing anything about either world.
+    expect(body.benchmarks.map((entry) => entry.id)).toEqual([BENCHMARK_ID, 'trading-10k']);
+    const summary = body.benchmarks.find((entry) => entry.id === BENCHMARK_ID);
     expect(summary).toMatchObject({
       id: BENCHMARK_ID,
       version: 1,
@@ -373,19 +376,29 @@ describe('benchmark catalogue endpoint', () => {
       seedCount: 1,
       caseCount: 7,
     });
+    expect(body.benchmarks.find((entry) => entry.id === 'trading-10k')).toMatchObject({
+      version: 1,
+      name: '$10K Trading Challenge',
+      environmentKey: 'trading-10k',
+      objectiveKey: 'grow-capital-disciplined',
+      scenarioCount: 7,
+      seedCount: 1,
+      caseCount: 7,
+    });
     // A caller can learn that a benchmark exists; it cannot learn how to build
     // one, and it cannot submit one.
-    expect(Object.keys(summary ?? {}).sort()).toEqual([
-      'caseCount',
-      'description',
-      'environmentKey',
-      'id',
-      'name',
-      'objectiveKey',
-      'scenarioCount',
-      'seedCount',
-      'version',
-    ]);
+    for (const entry of body.benchmarks)
+      expect(Object.keys(entry).sort()).toEqual([
+        'caseCount',
+        'description',
+        'environmentKey',
+        'id',
+        'name',
+        'objectiveKey',
+        'scenarioCount',
+        'seedCount',
+        'version',
+      ]);
     expect(JSON.stringify(body)).not.toMatch(/modifier|scenarios/);
   });
 

@@ -6,7 +6,6 @@
 // and keeps the exact state and configuration the environment produced, which is
 // what keeps every existing run reproducible byte for byte.
 
-import { createInitialSimulationState, DEFAULT_CONFIGURATION } from '@/lib/business/simulation';
 import type {
   SimulationConfiguration,
   SimulationEnvironmentKey,
@@ -14,6 +13,7 @@ import type {
   SimulationScenarioIdentity,
   SimulationState,
 } from '@/lib/contracts/simulation';
+import { createInitialSimulationState, defaultConfigurationFor } from '@/lib/environments/registry';
 import { applyScenario } from './apply';
 import { getScenario } from './catalog';
 import type { ScenarioChange } from './types';
@@ -41,6 +41,8 @@ export {
   SCARCITY_WATER_REDUCTION,
   SCENARIO_DEFINITIONS,
   TIGHT_STEP_LIMIT_REDUCTION,
+  TRADING_BASELINE_SCENARIO_ID,
+  TRADING_SCENARIO_IDS,
 } from './definitions';
 export { applyModifier, SCENARIO_MODIFIER_KINDS } from './modifiers';
 export * from './types';
@@ -76,7 +78,10 @@ export interface ScenarioInitializationInput {
  * world and can never act before the perturbation exists.
  */
 export function initializeScenarioRun(input: ScenarioInitializationInput): ScenarioInitialization {
-  const configuration = input.configuration ?? DEFAULT_CONFIGURATION;
+  // The default is the *named world's* own configuration, not a deployment-wide
+  // one: a trading run that fell back to the resource world's budget would run
+  // the benchmark at a cost allowance its own definition does not publish.
+  const configuration = input.configuration ?? defaultConfigurationFor(input.environmentKey);
   const state = createInitialSimulationState(
     input.environmentKey,
     input.objectiveKey,

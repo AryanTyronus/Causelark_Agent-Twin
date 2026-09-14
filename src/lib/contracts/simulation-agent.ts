@@ -1,7 +1,25 @@
 import { z } from 'zod';
 import { SimulationActionInput, SimulationState } from '@/lib/contracts/simulation';
 
-export const SimulationAgentToolName = z.enum(['observe_resources', 'request_action']);
+/**
+ * The tool names a turn's outcome may carry.
+ *
+ * Closed, and the union of every published environment's agent surface rather
+ * than one world's. A closed vocabulary is what keeps an unrecognised tool name
+ * out of the trace; a union is what lets a run of either world be persisted and
+ * read back through the same record. Adding an environment means adding its
+ * probes here, and a test asserts this list and the environments' declarations
+ * agree — so a world cannot offer a tool its own trace cannot record.
+ *
+ * `request_action` is deliberately shared: both worlds request actions through
+ * one tool, and the action's own schema is what differs between them.
+ */
+export const SimulationAgentToolName = z.enum([
+  'observe_resources',
+  'inspect_market',
+  'inspect_portfolio',
+  'request_action',
+]);
 export const SimulationAgentToolRequest = z.object({
   toolName: SimulationAgentToolName,
   input: z.record(z.string(), z.unknown()),

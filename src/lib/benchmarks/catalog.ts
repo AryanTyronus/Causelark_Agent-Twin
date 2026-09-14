@@ -12,18 +12,12 @@
 // benchmark that references a scenario version the catalogue no longer ships
 // fails at startup, not halfway through somebody's execution.
 
-import { getSimulationOptions, isSupportedSeed } from '@/lib/business/simulation';
+import { isSupportedSeed } from '@/lib/business/simulation';
+import { isKnownEnvironmentKey, simulationEnvironment } from '@/lib/environments/registry';
 import { findScenario } from '@/lib/scenarios/catalog';
 import { BENCHMARK_DEFINITIONS } from './definitions';
 import { buildRunMatrix } from './matrix';
-import {
-  BENCHMARK_BASELINE_SCENARIO_ID,
-  BenchmarkDefinition,
-  BenchmarkError,
-  type BenchmarkSummary,
-} from './types';
-
-const OPTION_KEYS = getSimulationOptions();
+import { BenchmarkDefinition, BenchmarkError, type BenchmarkSummary } from './types';
 
 /**
  * Check a definition's references before it is allowed into the catalogue.
@@ -44,15 +38,20 @@ export function validateBenchmarkDefinition(candidate: unknown): BenchmarkDefini
 
   // The environment is a closed catalogue, so an unknown one is an authoring
   // error rather than something to discover at execution time.
-  if (!OPTION_KEYS.environments.some((entry) => entry.key === definition.environmentKey))
+  if (!isKnownEnvironmentKey(definition.environmentKey))
     throw new BenchmarkError(
       'INVALID_BENCHMARK',
       `Benchmark ${definition.id} names environment ${definition.environmentKey}, which this deployment does not publish.`,
     );
-  if (!OPTION_KEYS.objectives.some((objective) => objective.key === definition.objectiveKey))
+  // The objective is checked against the environment that will be given it, not
+  // against every objective the deployment publishes: each world refuses an
+  // objective that is not its own, so a benchmark naming another world's
+  // objective would fail at the first case rather than here.
+  const environment = simulationEnvironment(definition.environmentKey);
+  if (!environment.objectives.some((objective) => objective.key === definition.objectiveKey))
     throw new BenchmarkError(
       'INVALID_BENCHMARK',
-      `Benchmark ${definition.id} names objective ${definition.objectiveKey}, which this environment does not publish.`,
+      `Benchmark ${definition.id} names objective ${definition.objectiveKey}, which the ${definition.environmentKey} environment does not publish.`,
     );
 
   const seenSeeds = new Set<number>();
@@ -79,6 +78,11 @@ export function validateBenchmarkDefinition(candidate: unknown): BenchmarkDefini
       );
     seen.add(reference.id);
     const scenario = findScenario(reference.id, reference.version);
+    if (scenario && scenario.environmentKey !== definition.environmentKey)
+      throw new BenchmarkError(
+        'INVALID_SCENARIO',
+        `Benchmark ${definition.id} runs the ${definition.environmentKey} environment but lists the ${scenario.environmentKey} condition ${reference.id}.`,
+      );
     if (!scenario) {
       const known = findScenario(reference.id);
       throw new BenchmarkError(
@@ -92,10 +96,10 @@ export function validateBenchmarkDefinition(candidate: unknown): BenchmarkDefini
 
   // Robustness is a statement about a change, so a definition has to name the
   // condition the change is measured from.
-  if (!definition.scenarios.some((entry) => entry.id === BENCHMARK_BASELINE_SCENARIO_ID))
+  if (!definition.scenarios.some((entry) => entry.id === definition.baselineScenarioId))
     throw new BenchmarkError(
       'INVALID_BENCHMARK',
-      `Benchmark ${definition.id} does not include the ${BENCHMARK_BASELINE_SCENARIO_ID} scenario, so it has no condition to measure degradation against.`,
+      `Benchmark ${definition.id} does not include the ${definition.baselineScenarioId} scenario, so it has no condition to measure degradation against.`,
     );
 
   // Last, because it is the only check that depends on everything above: the

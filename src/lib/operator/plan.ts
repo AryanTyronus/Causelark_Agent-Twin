@@ -17,12 +17,7 @@ import 'server-only';
 
 import { createHash } from 'node:crypto';
 import { getBenchmark } from '@/lib/benchmarks/catalog';
-import {
-  BENCHMARK_BASELINE_SCENARIO_ID,
-  BenchmarkError,
-  MAX_BENCHMARK_CASES,
-  MAX_BENCHMARK_SEEDS,
-} from '@/lib/benchmarks/types';
+import { BenchmarkError, MAX_BENCHMARK_CASES, MAX_BENCHMARK_SEEDS } from '@/lib/benchmarks/types';
 import { deploymentAgentCatalog } from '@/lib/business/agent-catalog';
 import { operatorBounds } from './config';
 import type { OperatorTestPlan } from './types';
@@ -124,7 +119,7 @@ export function buildOperatorPlan(input: BuildOperatorPlanInput): OperatorTestPl
   const scenarios = definition.scenarios.map((scenario) => ({
     id: scenario.id,
     version: scenario.version,
-    isBaseline: scenario.id === BENCHMARK_BASELINE_SCENARIO_ID,
+    isBaseline: scenario.id === definition.baselineScenarioId,
   }));
 
   const caseCount = scenarios.length * seeds.length;

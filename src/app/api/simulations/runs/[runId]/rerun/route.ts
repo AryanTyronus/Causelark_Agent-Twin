@@ -1,14 +1,16 @@
 import 'server-only';
 
 import { NextResponse } from 'next/server';
-import { DEFAULT_CONFIGURATION } from '@/lib/business/simulation';
 import { jsonValue, loadRun, toDetail } from '@/lib/business/simulation-persistence';
 import {
   SimulationConfiguration,
+  SimulationEnvironmentKey,
+  SimulationObjectiveKey,
   SimulationRerunResult,
   SimulationState,
 } from '@/lib/contracts/simulation';
 import { prisma } from '@/lib/db';
+import { defaultConfigurationFor } from '@/lib/environments/registry';
 import { requireAuth, type SessionUser } from '@/lib/require-auth';
 import {
   describeScenarioApplication,
@@ -28,8 +30,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ runId: 
   const { runId } = await params;
   const original = await loadRun(runId, user.id);
   if (!original) return NextResponse.json({ error: 'Run not found' }, { status: 404 });
+  // The environment and objective are parsed rather than cast. A row whose key
+  // is not one this deployment ships is a run that cannot be reproduced, and
+  // saying so is better than coercing it into some other world's rules.
+  const environmentKey = SimulationEnvironmentKey.parse(original.environmentKey);
+  const objectiveKey = SimulationObjectiveKey.parse(original.objectiveKey);
   const configuration = SimulationConfiguration.parse(
-    original.configuration ?? DEFAULT_CONFIGURATION,
+    original.configuration ?? defaultConfigurationFor(environmentKey),
   );
   let initialization: ReturnType<typeof initializeScenarioRun>;
   try {
@@ -37,11 +44,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ runId: 
     // the version it recorded — never from whatever the catalogue holds now. A
     // rerun must reproduce the original world, not a newer one with the same id.
     initialization = initializeScenarioRun({
-      environmentKey: original.environmentKey as 'resource-routing',
-      objectiveKey: original.objectiveKey as
-        | 'complete-delivery'
-        | 'preserve-reserve'
-        | 'stabilise-grid',
+      environmentKey,
+      objectiveKey,
       seed: original.seed,
       configuration,
       scenarioId: original.scenarioId,

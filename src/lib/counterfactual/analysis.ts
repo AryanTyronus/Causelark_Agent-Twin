@@ -49,12 +49,19 @@ import {
   MAX_REPORTED_FLIPS_PER_DECISION,
 } from './types';
 
-/** How an action reads in a generated statement. */
+/**
+ * How an action reads in a generated statement.
+ *
+ * The subject is whichever noun the verb reads, so a trading action reads
+ * "buy 25 GAMMA" rather than "buy 25" — a statement about an order that does not
+ * name the instrument is not a statement about the decision that was made.
+ */
 export function describeAction(input: SimulationActionInput): string {
   const action = canonicalAction(input);
-  return action.resource === undefined
+  const subject = action.asset ?? action.resource;
+  return subject === undefined
     ? `${action.type} ${action.amount}`
-    : `${action.type} ${action.amount} ${action.resource}`;
+    : `${action.type} ${action.amount} ${subject}`;
 }
 
 /**

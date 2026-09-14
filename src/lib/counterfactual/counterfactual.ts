@@ -19,7 +19,6 @@ import type { CounterfactualDecisionAnalysis as DecisionAnalysis } from './types
 import { CounterfactualDecisionAnalysis } from './types';
 
 export {
-  ACTION_AMOUNTS,
   type ActionCandidate,
   actionKey,
   canonicalAction,

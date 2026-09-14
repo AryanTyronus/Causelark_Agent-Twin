@@ -10,6 +10,7 @@ import {
   SimulationReplay as SimulationReplaySchema,
   type SimulationReplay as SimulationReplayType,
 } from '@/lib/contracts/simulation';
+import { describePortfolio } from '@/lib/trading/portfolio';
 
 export function SimulationReplay({ runId }: { runId: string }) {
   const [replay, setReplay] = useState<SimulationReplayType | null>(null);
@@ -105,14 +106,26 @@ export function SimulationReplay({ runId }: { runId: string }) {
               {frame.state.progress} / {frame.state.target}
             </span>
           </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            {Object.entries(frame.state.resources).map(([name, value]) => (
-              <div key={name} className="rounded border border-border bg-card px-3 py-2 text-xs">
-                <span className="text-muted-foreground">{name}</span>
-                <span className="float-right font-mono">{value}</span>
-              </div>
-            ))}
-          </div>
+          {frame.state.trading ? (
+            // A trading run holds no energy, materials or water, so the shared
+            // resource grid would report a $10,000 portfolio as three zeroes. The
+            // frame carries the recorded portfolio; this reads it.
+            <div className="mt-4 rounded border border-border bg-card px-3 py-2">
+              <p className="font-mono text-xs text-muted-foreground">
+                {frame.state.trading.positions.map((position) => position.asset).join(' · ')}
+              </p>
+              <p className="mt-1 font-mono text-sm">{describePortfolio(frame.state.trading)}</p>
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {Object.entries(frame.state.resources).map(([name, value]) => (
+                <div key={name} className="rounded border border-border bg-card px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">{name}</span>
+                  <span className="float-right font-mono">{value}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <p className="text-eyebrow">State changes</p>

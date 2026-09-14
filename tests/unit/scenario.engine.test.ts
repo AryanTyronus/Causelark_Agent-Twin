@@ -7,13 +7,17 @@
 // no randomness, no hidden mutation and no unvalidated world can get through.
 
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_CONFIGURATION } from '@/lib/business/simulation';
+import { type SimulationConfiguration, SimulationState } from '@/lib/contracts/simulation';
+// Through the registry, not the resource world's own module: this suite sweeps
+// the whole catalogue, and a sweep has to build each scenario's world with the
+// dispatcher a real run would use — otherwise it would be asserting the engine
+// against a world the engine itself would have refused to pair the scenario with.
 import {
   createInitialSimulationState,
-  DEFAULT_CONFIGURATION,
   evaluateSimulationAction,
   getSimulationStatus,
-} from '@/lib/business/simulation';
-import { type SimulationConfiguration, SimulationState } from '@/lib/contracts/simulation';
+} from '@/lib/environments/registry';
 import {
   applyModifier,
   applyScenario,
@@ -42,7 +46,14 @@ import {
   type ScenarioChange,
   ScenarioError,
   TIGHT_STEP_LIMIT_REDUCTION,
+  TRADING_BASELINE_SCENARIO_ID,
+  TRADING_SCENARIO_IDS,
 } from '@/lib/scenarios/scenario';
+import {
+  TRADING_CONFIGURATION,
+  TRADING_ENVIRONMENT_KEY,
+  TRADING_OBJECTIVE_KEY,
+} from '@/lib/trading/definitions';
 
 const SEEDS = [1042, 2048, 4242, 9182];
 const OBJECTIVE = 'complete-delivery' as const;
@@ -57,9 +68,41 @@ function baseline(
   };
 }
 
+/** The objective a world is scored against, for the runs the sweeps initialize. */
+function objectiveFor(environmentKey: string) {
+  return environmentKey === TRADING_ENVIRONMENT_KEY ? TRADING_OBJECTIVE_KEY : OBJECTIVE;
+}
+
+/**
+ * The baseline a shipped scenario is defined against.
+ *
+ * A baseline has to be built by the world the scenario names — that is the same
+ * rule `applyScenario` enforces — so this derives the world from the definition
+ * instead of assuming one. Deriving it is what lets the sweeps below keep
+ * asserting *every* shipped scenario rather than a filtered subset: a condition
+ * declared in either world is covered the moment it is declared, and cannot
+ * quietly escape immutability or determinism coverage by belonging to a world
+ * the sweep did not think to include.
+ */
+function baselineFor(id: string, seed = 1042): ScenarioBaseline {
+  const scenario = getScenario(id);
+  if (scenario.environmentKey === TRADING_ENVIRONMENT_KEY)
+    return {
+      state: createInitialSimulationState(
+        TRADING_ENVIRONMENT_KEY,
+        TRADING_OBJECTIVE_KEY,
+        seed,
+        TRADING_CONFIGURATION,
+      ),
+      configuration: TRADING_CONFIGURATION,
+    };
+  return baseline(seed);
+}
+
 /** Applies a shipped scenario to a fresh baseline and returns both. */
 function apply(id: string, seed = 1042, configuration = DEFAULT_CONFIGURATION) {
-  const base = baseline(seed, configuration);
+  const base =
+    configuration === DEFAULT_CONFIGURATION ? baselineFor(id, seed) : baseline(seed, configuration);
   return { base, result: applyScenario(base, getScenario(id)) };
 }
 
@@ -88,7 +131,7 @@ function probe(modifiers: Scenario['modifiers']): Scenario {
 }
 
 describe('scenario catalogue', () => {
-  it('ships the baseline plus one scenario per named condition', () => {
+  it('ships the baseline plus one scenario per named condition, in both worlds', () => {
     expect(listScenarios().map((scenario) => scenario.id)).toEqual([
       'baseline',
       'resource-scarcity',
@@ -97,7 +140,36 @@ describe('scenario catalogue', () => {
       'resource-outage',
       'tight-step-limit',
       'action-rejection',
+      TRADING_BASELINE_SCENARIO_ID,
+      'high-volatility',
+      'market-drawdown',
+      'liquidity-pressure',
+      'concentration-pressure',
+      'adverse-price-shock',
+      'tight-decision-limit',
     ]);
+  });
+
+  it('partitions the catalogue by the world each condition belongs to', () => {
+    // One catalogue holds both worlds' conditions — a run's recorded scenario has
+    // to resolve regardless of which world produced it — so the partition is what
+    // keeps one world's conditions off the other's runs. The scenario engine
+    // refuses a cross-world pairing outright rather than perturbing nothing.
+    const trading = listScenarios().filter(
+      (scenario) => scenario.environmentKey === TRADING_ENVIRONMENT_KEY,
+    );
+    expect(trading.map((scenario) => scenario.id)).toEqual([...TRADING_SCENARIO_IDS]);
+    for (const scenario of listScenarios()) {
+      expect([TRADING_ENVIRONMENT_KEY, 'resource-routing'], scenario.id).toContain(
+        scenario.environmentKey,
+      );
+    }
+    expect(() => applyScenario(baseline(), getScenario(TRADING_BASELINE_SCENARIO_ID))).toThrow(
+      ScenarioError,
+    );
+    expect(() =>
+      applyScenario(baselineFor(TRADING_BASELINE_SCENARIO_ID), getScenario('baseline')),
+    ).toThrow(/resource-routing/);
   });
 
   it('validates every shipped definition against the schema', () => {
@@ -115,15 +187,27 @@ describe('scenario catalogue', () => {
     expect(listScenarios().every((scenario) => scenario.version < 1000)).toBe(true);
   });
 
-  it('closes the modifier vocabulary to the six the engine implements', () => {
+  it('closes the modifier vocabulary to the eleven kinds the engine implements', () => {
     expect(SCENARIO_MODIFIER_KINDS).toEqual([
       'budget-reduction',
+      'concentration-tightening',
+      'drift-reduction',
+      'liquidity-tightening',
       'max-steps-reduction',
       'permission-revocation',
+      'price-shock',
       'resource-outage',
       'resource-reduction',
       'risk-increase',
+      'volatility-increase',
     ]);
+    // Every kind a definition uses is one the engine can apply: the vocabulary is
+    // closed in both directions, so a definition cannot name a kind the record
+    // does not implement and the record cannot grow a kind no definition uses.
+    const declared = new Set(
+      listScenarios().flatMap((scenario) => scenario.modifiers.map((m) => m.kind)),
+    );
+    for (const kind of declared) expect(SCENARIO_MODIFIER_KINDS).toContain(kind);
   });
 
   it('summarises the catalogue without leaking modifier internals', () => {
@@ -520,7 +604,7 @@ describe('immutability', () => {
   it.each(listScenarios().map((scenario) => scenario.id))(
     'applying %s leaves the baseline object untouched',
     (id) => {
-      const base = baseline();
+      const base = baselineFor(id);
       const snapshot = structuredClone(base);
       deepFreeze(base);
       // A frozen baseline turns any in-place write into a thrown TypeError, so
@@ -578,8 +662,8 @@ describe('determinism', () => {
     for (const seed of SEEDS) {
       for (const scenario of listScenarios()) {
         const result = initializeScenarioRun({
-          environmentKey: 'resource-routing',
-          objectiveKey: OBJECTIVE,
+          environmentKey: scenario.environmentKey,
+          objectiveKey: objectiveFor(scenario.environmentKey),
           seed,
           scenarioId: scenario.id,
         });
@@ -593,10 +677,10 @@ describe('determinism', () => {
       // Definitions are persisted as data and served over the API, so a
       // definition that only survives as a live object would not be usable.
       const roundTripped = JSON.parse(JSON.stringify(scenario)) as Scenario;
-      expect(applyScenario(baseline(), roundTripped), scenario.id).toEqual(
-        applyScenario(baseline(), scenario),
+      expect(applyScenario(baselineFor(scenario.id), roundTripped), scenario.id).toEqual(
+        applyScenario(baselineFor(scenario.id), scenario),
       );
-      const result = applyScenario(baseline(), scenario);
+      const result = applyScenario(baselineFor(scenario.id), scenario);
       expect(SimulationState.parse(JSON.parse(JSON.stringify(result.state))), scenario.id).toEqual(
         result.state,
       );

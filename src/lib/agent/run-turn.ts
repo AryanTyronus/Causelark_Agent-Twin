@@ -9,11 +9,16 @@ import {
 } from '@/lib/agent/provider';
 import { runResourceAgentTurn } from '@/lib/agent/resource-agent';
 import { DEFAULT_MAX_ACTIONS_PER_TURN } from '@/lib/agent/resource-tools';
-import { getSimulationOptions, getSimulationStatus } from '@/lib/business/simulation';
+import { getSimulationOptions } from '@/lib/business/simulation';
 import { jsonValue, loadRun, toDetail } from '@/lib/business/simulation-persistence';
-import { SimulationConfiguration, SimulationState } from '@/lib/contracts/simulation';
+import {
+  SimulationConfiguration,
+  SimulationObjectiveKey,
+  SimulationState,
+} from '@/lib/contracts/simulation';
 import { prisma } from '@/lib/db';
 import { env } from '@/lib/env';
+import { getSimulationStatus, simulationEnvironmentFor } from '@/lib/environments/registry';
 
 export class TurnConflictError extends Error {
   constructor() {
@@ -58,11 +63,19 @@ export async function runTurn(runId: string, ownerId: string, options: TurnOptio
     const configuration = SimulationConfiguration.parse(
       run.configuration ?? catalogue.configuration,
     );
-    const objective = catalogue.objectives.find(
-      (item) => item.key === run.objectiveKey,
-    )?.description;
-    if (!objective)
+    // The objective text comes from the world this run belongs to, not from the
+    // resource catalogue: after the trading benchmark exists the catalogue lists
+    // objectives that only one of the two worlds answers to, and looking a
+    // trading objective up in it would report a missing objective rather than
+    // the brief the agent was meant to be given.
+    const environment = simulationEnvironmentFor(state);
+    // Parsed rather than cast: the objective key arrives from a persisted row, and
+    // an unknown one should be refused as a bad run rather than looked up in a
+    // world that never published it.
+    const objectiveKey = SimulationObjectiveKey.safeParse(run.objectiveKey);
+    if (!objectiveKey.success)
       throw new AgentProviderError('provider_error', 'Simulation objective is unavailable.');
+    const objective = environment.objectiveDescription(objectiveKey.data);
     const agentRun = await runResourceAgentTurn({
       objective,
       state,

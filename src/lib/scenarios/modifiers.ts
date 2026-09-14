@@ -13,10 +13,17 @@ import {
   SimulationConfiguration as SimulationConfigurationSchema,
   type SimulationState,
   SimulationState as SimulationStateSchema,
+  type TradingParameters,
+  type TradingState,
 } from '@/lib/contracts/simulation';
+import { quotesAt } from '@/lib/trading/market';
 import {
+  MAX_SCENARIO_SPREAD_BPS,
+  MAX_SCENARIO_VOLATILITY_BPS,
   MIN_SCENARIO_BUDGET,
+  MIN_SCENARIO_DRIFT_BPS,
   MIN_SCENARIO_MAX_STEPS,
+  MIN_SCENARIO_ORDER_QUANTITY,
   SCENARIO_RESOURCE_ORDER,
   type ScenarioBaseline,
   type ScenarioChange,
@@ -181,6 +188,176 @@ const applyPermissionRevocation: ScenarioModifierApplier<'permission-revocation'
   };
 };
 
+//
+// The trading conditions.
+//
+// Every one of these edits `state.trading.parameters` — the model the seeded
+// price path is a pure function of — and then re-derives the state's own quotes
+// from the parameters it now holds. Nothing here writes a price: a condition that
+// edited a quote directly would describe a market the model could not have
+// produced, and the run's own replay would not reproduce it from the seed.
+//
+// Each refuses a baseline with no trading state rather than silently changing
+// nothing. A trading condition applied to a resource world is an authoring
+// mistake, and an appliance that quietly did nothing would report a run as
+// "conditioned" when nothing about it was.
+
+/** The trading sub-state, or a refusal. Every applier below starts here. */
+function tradingOf(current: ScenarioBaseline, modifier: ScenarioModifierKind): TradingState {
+  const trading = current.state.trading;
+  if (!trading)
+    throw new ScenarioError(
+      'INVALID_BASELINE',
+      `The ${modifier} condition perturbs a market, but this baseline has no trading state.`,
+    );
+  return trading;
+}
+
+/**
+ * Rebuild the state around new market parameters.
+ *
+ * The quotes are re-derived from the parameters the state now holds, so the
+ * prices an agent can observe are exactly the ones its own market model implies.
+ * Only the current step is priced — `quotesAt` never reaches forward — so a
+ * conditioned state still cannot leak a future price.
+ */
+function withParameters(
+  current: ScenarioBaseline,
+  trading: TradingState,
+  parameters: TradingParameters,
+  changes: ScenarioChange[],
+): ModifierOutcome {
+  const next: TradingState = { ...trading, parameters };
+  return {
+    state: SimulationStateSchema.parse({
+      ...current.state,
+      trading: {
+        ...next,
+        quotes: quotesAt(current.state.seed, current.state.step, parameters),
+      },
+    }),
+    configuration: current.configuration,
+    changes,
+  };
+}
+
+/** Report a parameter that moved, including the constraint the agent is told about. */
+function parameterChange(
+  field: string,
+  before: unknown,
+  after: unknown,
+  modifier: ScenarioModifierKind,
+): ScenarioChange {
+  return change(`trading.parameters.${field}`, before, after, modifier);
+}
+
+const applyVolatilityIncrease: ScenarioModifierApplier<'volatility-increase'> = (
+  current,
+  modifier,
+) => {
+  const trading = tradingOf(current, modifier.kind);
+  const before = trading.parameters.volatilityBps;
+  const after = Math.min(MAX_SCENARIO_VOLATILITY_BPS, before + modifier.increaseBy);
+  const constraints = appendConstraint(current.state.constraints, modifier.constraint);
+  return withParameters(
+    { state: { ...current.state, constraints }, configuration: current.configuration },
+    trading,
+    { ...trading.parameters, volatilityBps: after },
+    [
+      parameterChange('volatilityBps', before, after, modifier.kind),
+      ...flag('constraints', current.state.constraints, constraints, modifier.kind),
+    ],
+  );
+};
+
+const applyDriftReduction: ScenarioModifierApplier<'drift-reduction'> = (current, modifier) => {
+  const trading = tradingOf(current, modifier.kind);
+  const before = trading.parameters.driftBps;
+  const after = Math.max(MIN_SCENARIO_DRIFT_BPS, before - modifier.reduceBy);
+  const constraints = appendConstraint(current.state.constraints, modifier.constraint);
+  return withParameters(
+    { state: { ...current.state, constraints }, configuration: current.configuration },
+    trading,
+    { ...trading.parameters, driftBps: after },
+    [
+      parameterChange('driftBps', before, after, modifier.kind),
+      ...flag('constraints', current.state.constraints, constraints, modifier.kind),
+    ],
+  );
+};
+
+const applyLiquidityTightening: ScenarioModifierApplier<'liquidity-tightening'> = (
+  current,
+  modifier,
+) => {
+  const trading = tradingOf(current, modifier.kind);
+  const beforeSpread = trading.parameters.spreadBps;
+  const afterSpread = Math.min(MAX_SCENARIO_SPREAD_BPS, beforeSpread + modifier.spreadIncreaseBps);
+  const beforeOrder = trading.parameters.maxOrderQuantity;
+  const afterOrder = reduce(beforeOrder, modifier.orderSizeReduction, MIN_SCENARIO_ORDER_QUANTITY);
+  const constraints = appendConstraint(current.state.constraints, modifier.constraint);
+  return withParameters(
+    { state: { ...current.state, constraints }, configuration: current.configuration },
+    trading,
+    { ...trading.parameters, spreadBps: afterSpread, maxOrderQuantity: afterOrder },
+    [
+      parameterChange('spreadBps', beforeSpread, afterSpread, modifier.kind),
+      parameterChange('maxOrderQuantity', beforeOrder, afterOrder, modifier.kind),
+      ...flag('constraints', current.state.constraints, constraints, modifier.kind),
+    ],
+  );
+};
+
+const applyConcentrationTightening: ScenarioModifierApplier<'concentration-tightening'> = (
+  current,
+  modifier,
+) => {
+  const trading = tradingOf(current, modifier.kind);
+  const beforeConcentration = trading.parameters.maxConcentrationBps;
+  const beforeExposure = trading.parameters.maxExposureBps;
+  const constraints = appendConstraint(current.state.constraints, modifier.constraint);
+  return withParameters(
+    { state: { ...current.state, constraints }, configuration: current.configuration },
+    trading,
+    {
+      ...trading.parameters,
+      maxConcentrationBps: modifier.maxConcentrationBps,
+      maxExposureBps: modifier.maxExposureBps,
+    },
+    [
+      parameterChange(
+        'maxConcentrationBps',
+        beforeConcentration,
+        modifier.maxConcentrationBps,
+        modifier.kind,
+      ),
+      parameterChange('maxExposureBps', beforeExposure, modifier.maxExposureBps, modifier.kind),
+      ...flag('constraints', current.state.constraints, constraints, modifier.kind),
+    ],
+  );
+};
+
+const applyPriceShock: ScenarioModifierApplier<'price-shock'> = (current, modifier) => {
+  const trading = tradingOf(current, modifier.kind);
+  const constraints = appendConstraint(current.state.constraints, modifier.constraint);
+  return withParameters(
+    { state: { ...current.state, constraints }, configuration: current.configuration },
+    trading,
+    {
+      ...trading.parameters,
+      shockStep: modifier.step,
+      shockBps: modifier.shockBps,
+      shockAsset: modifier.asset,
+    },
+    [
+      parameterChange('shockStep', trading.parameters.shockStep, modifier.step, modifier.kind),
+      parameterChange('shockBps', trading.parameters.shockBps, modifier.shockBps, modifier.kind),
+      parameterChange('shockAsset', null, modifier.asset, modifier.kind),
+      ...flag('constraints', current.state.constraints, constraints, modifier.kind),
+    ],
+  );
+};
+
 /**
  * The closed vocabulary. A modifier kind absent from this record cannot be
  * applied, so a definition cannot smuggle in behaviour the engine never agreed
@@ -195,6 +372,11 @@ const MODIFIER_APPLIERS: {
   'risk-increase': applyRiskIncrease,
   'max-steps-reduction': applyMaxStepsReduction,
   'permission-revocation': applyPermissionRevocation,
+  'volatility-increase': applyVolatilityIncrease,
+  'drift-reduction': applyDriftReduction,
+  'liquidity-tightening': applyLiquidityTightening,
+  'concentration-tightening': applyConcentrationTightening,
+  'price-shock': applyPriceShock,
 };
 
 /**

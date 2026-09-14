@@ -89,6 +89,10 @@ export function counterfactualEvidence(input: {
     maxTurns: source.maxTurns,
     terminationReason: trajectory.continuation.terminationReason,
     scenario: source.scenario ?? null,
+    // Held constant like the fields above: the intervention changed a decision,
+    // not which world the run was in, so scoring the branch under other constants
+    // would report a difference the alternative action did not cause.
+    scoringProfile: source.scoringProfile,
   };
   return { branchId, trajectory, input: evidence, evaluation: evaluateRun(evidence) };
 }

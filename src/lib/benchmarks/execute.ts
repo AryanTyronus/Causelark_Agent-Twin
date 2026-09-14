@@ -38,11 +38,11 @@ import {
   resolveDeployedSelection,
 } from '@/lib/agent/provider';
 import { runTurn, TurnConflictError } from '@/lib/agent/run-turn';
-import { DEFAULT_CONFIGURATION } from '@/lib/business/simulation';
 import { evaluatePersistedRun } from '@/lib/business/simulation-evaluation';
 import { jsonValue, loadRun } from '@/lib/business/simulation-persistence';
 import { prisma } from '@/lib/db';
 import { env } from '@/lib/env';
+import { defaultConfigurationFor } from '@/lib/environments/registry';
 import {
   describeScenarioApplication,
   initializeScenarioRun,
@@ -366,7 +366,13 @@ async function executeCase(input: {
   attribution: BenchmarkAgentAttribution | null;
 }): Promise<BenchmarkRun> {
   const { cell, definition, ownerId, selection, attribution } = input;
-  const configuration = { ...DEFAULT_CONFIGURATION, ...definition.configuration };
+  // Merged over the WORLD's own defaults, resolved from the environment the
+  // definition names — the definition's overrides are a delta on its own world,
+  // not on whichever world happened to be the first one shipped.
+  const configuration = {
+    ...defaultConfigurationFor(definition.environmentKey),
+    ...definition.configuration,
+  };
   const initialization = initializeScenarioRun({
     environmentKey: definition.environmentKey,
     objectiveKey: definition.objectiveKey,

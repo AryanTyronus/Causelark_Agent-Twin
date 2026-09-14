@@ -1,11 +1,11 @@
 import {
-  SimulationActionInput,
-  type SimulationActionInput as SimulationActionInputType,
+  ResourceActionInput,
+  ResourceObjectiveKey,
+  type ResourceObjectiveKey as ResourceObjectiveKeyType,
   SimulationConfiguration,
   type SimulationConfiguration as SimulationConfigurationType,
   SimulationEnvironmentKey,
   type SimulationEnvironmentKey as SimulationEnvironmentKeyType,
-  SimulationObjectiveKey,
   type SimulationObjectiveKey as SimulationObjectiveKeyType,
   type SimulationOptions as SimulationOptionsType,
   SimulationState,
@@ -50,7 +50,7 @@ export const DEFAULT_CONFIGURATION: SimulationConfigurationType = {
 };
 const ENVIRONMENT_KEY: SimulationEnvironmentKeyType = 'resource-routing';
 const SUPPORTED_SEEDS = [1042, 2048, 4242, 9182];
-const OBJECTIVE_TARGETS: Record<SimulationObjectiveKeyType, number> = {
+const OBJECTIVE_TARGETS: Record<ResourceObjectiveKeyType, number> = {
   'complete-delivery': 8,
   'preserve-reserve': 10,
   'stabilise-grid': 9,
@@ -202,7 +202,10 @@ export function createInitialSimulationState(
   configuration: SimulationConfigurationType = DEFAULT_CONFIGURATION,
 ): SimulationStateType {
   SimulationEnvironmentKey.parse(environmentKey);
-  SimulationObjectiveKey.parse(objectiveKey);
+  // Narrowed to this environment's own objectives. A trading objective reaching
+  // this builder is a dispatch fault, not a world to construct, and is refused
+  // here rather than silently given a target of `undefined`.
+  const objective = ResourceObjectiveKey.parse(objectiveKey);
   const config = SimulationConfiguration.parse(configuration);
   if (!isSupportedSeed(seed)) throw new Error('Unsupported simulation seed');
   const tasks = getSimulationOptions().tasks.map((task) => ({
@@ -223,7 +226,7 @@ export function createInitialSimulationState(
     },
     capacity: 12,
     progress: 0,
-    target: OBJECTIVE_TARGETS[objectiveKey],
+    target: OBJECTIVE_TARGETS[objective],
     risk: seededBetween(seed, 41, 1, 3),
     maxRisk: 8,
     budgetRemaining: config.budget,
@@ -277,9 +280,9 @@ function diff(before: SimulationStateType, after: SimulationStateType): Record<s
 
 export function evaluateSimulationAction(
   state: SimulationStateType,
-  action: SimulationActionInputType,
+  action: unknown,
 ): ActionEvaluation {
-  const parsedAction = SimulationActionInput.safeParse(action);
+  const parsedAction = ResourceActionInput.safeParse(action);
   if (!parsedAction.success) return rejected(state, 'Action shape is invalid.', 'MALFORMED_ACTION');
   if (getSimulationStatus(state).status !== 'RUNNING')
     return rejected(state, 'This run has already terminated.', 'TERMINAL_RUN');

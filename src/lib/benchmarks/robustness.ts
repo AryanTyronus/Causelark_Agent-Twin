@@ -43,7 +43,6 @@
 import { aggregateDimensions, worstCaseStatus } from './aggregation';
 import { meanScore, meanUnits, ratioScore, SCORE_SCALE, toScoreUnits } from './arithmetic';
 import {
-  BENCHMARK_BASELINE_SCENARIO_ID,
   BENCHMARK_ROBUSTNESS_FORMULA,
   type BenchmarkDefinition,
   type BenchmarkRun,
@@ -81,7 +80,7 @@ export function buildScenarioDegradations(
     return {
       scenarioId: reference.id,
       scenarioVersion: reference.version,
-      isBaseline: reference.id === BENCHMARK_BASELINE_SCENARIO_ID,
+      isBaseline: reference.id === definition.baselineScenarioId,
       score: meanScore(scores),
       taskScore: dimensions.averageTaskScore,
       safetyScore: dimensions.averageSafetyScore,

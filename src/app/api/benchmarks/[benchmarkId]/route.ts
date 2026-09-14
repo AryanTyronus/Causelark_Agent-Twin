@@ -15,7 +15,6 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import { findBenchmark } from '@/lib/benchmarks/catalog';
 import {
-  BENCHMARK_BASELINE_SCENARIO_ID,
   BENCHMARK_ROBUSTNESS_FORMULA,
   BenchmarkDetail,
   MAX_BENCHMARK_CASES,
@@ -58,7 +57,7 @@ export async function GET(req: Request, context: { params: Promise<{ benchmarkId
       scenarios: benchmark.scenarios,
       seeds: benchmark.seeds,
       caseCount: benchmark.scenarios.length * benchmark.seeds.length,
-      baselineScenarioId: BENCHMARK_BASELINE_SCENARIO_ID,
+      baselineScenarioId: benchmark.baselineScenarioId,
       robustnessFormula: BENCHMARK_ROBUSTNESS_FORMULA,
       configuration: benchmark.configuration ?? null,
       limits: { maxCases: MAX_BENCHMARK_CASES, maxSeeds: MAX_BENCHMARK_SEEDS },

@@ -39,11 +39,7 @@ import { z } from 'zod';
 import { resolveAgentSelection } from '@/lib/agent/provider';
 import { getBenchmark, listBenchmarkSummaries } from '@/lib/benchmarks/catalog';
 import { configurationForSelection, executeBenchmark } from '@/lib/benchmarks/execute';
-import {
-  BENCHMARK_BASELINE_SCENARIO_ID,
-  BenchmarkError,
-  BenchmarkResult,
-} from '@/lib/benchmarks/types';
+import { BenchmarkError, BenchmarkResult } from '@/lib/benchmarks/types';
 import { type DeploymentAgentCatalog, deploymentAgentCatalog } from '@/lib/business/agent-catalog';
 import { toEvaluationInput } from '@/lib/business/simulation-evaluation';
 import { loadRun } from '@/lib/business/simulation-persistence';
@@ -425,11 +421,11 @@ export function createOperatorToolbox(options: OperatorToolboxOptions): Operator
             objectiveKey: definition.objectiveKey,
             scenarios: definition.scenarios.map((scenario) => ({
               ...scenario,
-              isBaseline: scenario.id === BENCHMARK_BASELINE_SCENARIO_ID,
+              isBaseline: scenario.id === definition.baselineScenarioId,
             })),
             seeds: definition.seeds,
             caseCount: definition.scenarios.length * definition.seeds.length,
-            baselineScenarioId: BENCHMARK_BASELINE_SCENARIO_ID,
+            baselineScenarioId: definition.baselineScenarioId,
           },
           { benchmarkId: definition.id, version: definition.version },
         );

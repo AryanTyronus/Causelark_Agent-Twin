@@ -3,20 +3,15 @@
 // These tests pin the three derivations the analysis rests on: the action space
 // the environment actually admits, the decision points read out of a persisted
 // trace, and the continuation a branch takes. None of them asserts a formula
-// this engine owns — the action space is the action contract's own vocabulary,
-// validity is the environment's own verdict, and a transition is the
-// environment's own transition function. What is asserted is that this engine
-// asks the environment rather than answering for it.
+// this engine owns — the action space is the state's own environment's
+// vocabulary, validity is that environment's own verdict, and a transition is
+// that environment's own transition function. What is asserted is that this
+// engine asks the environment rather than answering for it.
 
 import { describe, expect, it } from 'vitest';
+import { evaluateSimulationAction, getSimulationStatus } from '@/lib/business/simulation';
+import { ResourceActionInput } from '@/lib/contracts/simulation';
 import {
-  createInitialSimulationState,
-  evaluateSimulationAction,
-  getSimulationStatus,
-} from '@/lib/business/simulation';
-import { SimulationActionInput } from '@/lib/contracts/simulation';
-import {
-  ACTION_AMOUNTS,
   actionKey,
   canonicalAction,
   enumerateActionSpace,
@@ -37,6 +32,7 @@ import {
   extractDecisionPoints,
 } from '@/lib/counterfactual/decisions';
 import { CounterfactualError } from '@/lib/counterfactual/types';
+import { createInitialSimulationState } from '@/lib/environments/registry';
 import {
   POST_TERMINAL_PLAN,
   REFUSED_PLAN,
@@ -58,16 +54,22 @@ function codeOf(run: () => unknown): string {
 }
 
 describe('the action space', () => {
-  it('takes its amount range from the action contract rather than restating it', () => {
-    // The probe's bound is a search limit; the contract's own maximum is what
-    // decides the answer. If the contract widened `amount`, this would widen.
-    expect(ACTION_AMOUNTS).toEqual([1, 2, 3, 4, 5]);
-    expect(SimulationActionInput.safeParse({ type: 'rest', amount: 6 }).success).toBe(false);
-    expect(SimulationActionInput.safeParse({ type: 'rest', amount: 5 }).success).toBe(true);
+  it('takes its amount range from the environment rather than restating it', () => {
+    // The environment derives its ladder by probing its own validator, and this
+    // engine is handed that ladder rather than computing one. The two schemas
+    // below say why that matters: the shared record schema is wider than the
+    // resource-routing world's rule, so a space enumerated from the record
+    // schema would offer this environment sizes it refuses.
+    const amounts = [...new Set(enumerateActionSpace(initial).map((action) => action.amount))].sort(
+      (a, b) => a - b,
+    );
+    expect(amounts).toEqual([1, 2, 3, 4, 5]);
+    expect(ResourceActionInput.safeParse({ type: 'rest', amount: 6 }).success).toBe(false);
+    expect(ResourceActionInput.safeParse({ type: 'rest', amount: 5 }).success).toBe(true);
   });
 
   it('is enumerated in a fixed type → resource → amount order', () => {
-    const space = enumerateActionSpace();
+    const space = enumerateActionSpace(initial);
     expect(space).toHaveLength(15 * 2 + 5);
     // rest takes no resource, so it contributes one amount axis, not three.
     expect(space.slice(0, 5).map(actionKey)).toEqual([
@@ -92,8 +94,8 @@ describe('the action space', () => {
       'rest:-:5',
     ]);
     // A second enumeration is the same enumeration: the space is a function of
-    // the contract, not of iteration.
-    expect(enumerateActionSpace()).toEqual(space);
+    // the state's environment, not of iteration.
+    expect(enumerateActionSpace(initial)).toEqual(space);
   });
 
   it('canonicalises a rest action so a meaningless resource is not a second choice', () => {
@@ -105,7 +107,7 @@ describe('the action space', () => {
       actionKey({ type: 'rest', amount: 3 }),
     );
     // Every enumerated action is already canonical, so no two entries collide.
-    const space = enumerateActionSpace();
+    const space = enumerateActionSpace(initial);
     expect(new Set(space.map(actionKey)).size).toBe(space.length);
   });
 

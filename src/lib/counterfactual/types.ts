@@ -29,22 +29,16 @@ import {
 import { type EvaluationCategory, EvaluationResult } from '@/lib/evaluation/types';
 
 /**
- * The order the action space is enumerated in: action type, then resource, then
- * amount. Named explicitly rather than read from object key iteration, so two
- * analyses of the same run produce the same alternative order — which is also
- * the order every tie in the report is broken by.
+ * How far the engine will let an environment search for the action range it
+ * accepts. This is a search bound, not a copy of any environment's own limit:
+ * the accepted range is *derived* by asking the environment's validator, so a
+ * change to that environment's rule moves its action space with it instead of
+ * silently disagreeing with it.
+ *
+ * The bound itself is the registry's, re-exported under the name this module has
+ * always used for it so there is one number rather than two that agree today.
  */
-export const ACTION_TYPE_ORDER = ['harvest', 'allocate', 'rest'] as const;
-export const ACTION_RESOURCE_ORDER = ['energy', 'materials', 'water'] as const;
-
-/**
- * How far the engine will probe the action contract for the amount range it
- * accepts. This is a search bound, not a copy of the contract's own limit: the
- * accepted range is *derived* by asking `SimulationActionInput`, so a change to
- * the contract moves the action space with it instead of silently disagreeing
- * with it.
- */
-export const ACTION_AMOUNT_PROBE_LIMIT = 10;
+export { ACTION_SPACE_PROBE_LIMIT as ACTION_AMOUNT_PROBE_LIMIT } from '@/lib/environments/types';
 
 /**
  * The three named policies a report is stated under. They are exported as
